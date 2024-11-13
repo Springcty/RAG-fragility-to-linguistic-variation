@@ -3,6 +3,8 @@ from langchain.vectorstores import Chroma
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain_huggingface.llms import HuggingFacePipeline
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+
+from langchain_community.retrievers import WikipediaRetriever
 from langchain.chains.retrieval import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
@@ -38,7 +40,8 @@ vectorstore = Chroma.from_texts(
 
 # Retriever setup
 retriever = vectorstore.as_retriever(search_kwargs={'k': 5}) # retrieve top 5 most relevant documents
-
+# # Wikipedia retriever
+# retriever = WikipediaRetriever()
 
 # Load tokenizer and model
 model_name = 'meta-llama/Meta-Llama-3.1-8B-Instruct'
