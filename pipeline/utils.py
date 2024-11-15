@@ -7,8 +7,8 @@ def load_linguistic_query(args):
     df_questions = pd.read_csv(f'{load_path}/queries.csv')
     questions_o = df_questions['Original Question'].tolist()
     questions_m = df_questions['Modified Question'].tolist()
-    scores_o = df_questions['Original Readability Score'].tolist()
-    scores_m = df_questions['Modified Readability Score'].tolist()
+    scores_o = df_questions['Original Score'].tolist()
+    scores_m = df_questions['Modified Score'].tolist()
     
     df_answers = pd.read_csv(f'{load_path}/answers.csv')
     answers = df_answers['answers'].tolist()
