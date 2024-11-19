@@ -301,7 +301,7 @@ def main(
 def randomize(data, num_samples, use_full=False):
     random.seed(42)
 
-
+    print(use_full)
     print(f"Number of examples: {len(train_dataset)}")
     print(f"Column names: {train_dataset.column_names}")
     if use_full:
@@ -311,6 +311,7 @@ def randomize(data, num_samples, use_full=False):
 
     samples= []
     ans=[]
+    print(len(random_indices))
     # View a few examples
     for i in random_indices:
         # print(f"\nExample {i+1}:")
@@ -348,14 +349,18 @@ if __name__ == "__main__":
     dataset = load_dataset("akariasai/PopQA")
     train_dataset = dataset['test']
     samples=20
-    random_samples= randomize(train_dataset, samples, args.full_sampling)
+    print(args.full_sampling)
+    random_samples= randomize(train_dataset, samples, True)
 
     # with open(args.prompts) as f:
     #     prompts = f.readlines()
     formal_prompt_prefix= """You are a helpful query rewriting AI assistant. Your task is to convert the given retrieval knowledge query into a very informal and casual query that can have an impact on retrieval. 
 Use your lingustic knowledge to convert the query to an informal query. Examples of techniques that can be used include changing Conversational Tone, using filler words, slangs and idioms, Misspellings and Typos among other things. You must always preserve the intent of the query. Original Query:"""
     
-    prompts = [formal_prompt_prefix + query + ". Informal Query: " for query in random_samples]
+    read_prompt_prefix = """You are a helpful query rewriting AI assistant. Your task is to convert the given retrieval knowledge query into a query with low readaility that can have an impact on retrieval. 
+Use your lingustic knowledge to convert the query to a low readability query. Examples of techniques that can be used include increasing lexical and syntactic complexity, semantic ambiguity, among other things. You must always preserve the intent of the query. Original Query:"""
+    # prompts = [formal_prompt_prefix + query + ". Informal Query: " for query in random_samples]
+    prompts = [read_prompt_prefix + query + ". Query with Low Readability: " for query in random_samples]
     # header = prompts[0].split("\t")
     # prompts = prompts[1:]  # skipping header for now
     results = main(
