@@ -38,13 +38,23 @@ parser.add_argument('--customize_retriever', action='store_true',
                     help='True if use customized retriever instead of WikipediaRetriever from LangChain')
 parser.add_argument('--model_name', type=str, default='/data/models/huggingface/meta-llama/Llama-3.1-8B-Instruct',
                     help='LLM used for generation')
+parser.add_argument('--subset', default=1,
+                    help='The first, or second or third subset of the dataset')
 
 args = parser.parse_args()
 
 
 def main():
     # Load the dataset
-    dataset = load_linguistic_query(args)[:10]
+    dataset = load_linguistic_query(args)
+    one_three = len(dataset)//3
+    two_three = len(dataset)//3 * 2
+    if args.subset == 1:
+        dataset = dataset[:one_three]
+    elif args.subset == 2:
+        dataset = dataset[one_three: two_three]
+    elif args.subset == 3:
+        dataset = dataset[two_three:]
 
     # Set up the retriever
     if args.customize_retriever:
@@ -227,10 +237,16 @@ def main():
             examples=few_shot_PopQA_formality
         )
 
+    # # few-shot prompt
+    # prompt = ChatPromptTemplate([
+    #     ('system', 'You are a professional question-answer task assistant. Use the following pieces of retrieved context to answer the question briefly. \n\nContext: {context}\n\nBelow are examples of questions and answers:'),
+    #     few_shot_prompt,
+    #     ('human', 'Now, it\'s your turn to answer the question below. The answer should contain only one sentence.\n\nQuestion: {input}\n\nAnswer:')
+    # ])
+    
     prompt = ChatPromptTemplate([
-        ('system', 'You are a professional question-answer task assistant. Use the following pieces of retrieved context to answer the question briefly. \n\nContext: {context}\n\nBelow are examples of questions and answers:'),
-        few_shot_prompt,
-        ('human', 'Now, it\'s your turn to answer the question below. The answer should contain only one sentence.\n\nQuestion: {input}\n\nAnswer:')
+        ('system', 'You are a professional question-answer task assistant. Use the following pieces of retrieved context to answer the question briefly. The answer should contain only one sentence.\n\nContext: {context}'),
+        ('human', 'Question: {input}\n\nAnswer:')
     ])
 
     questions_answer_chain = create_stuff_documents_chain(llm, prompt)
@@ -238,49 +254,99 @@ def main():
     print('-'*10, 'RAG chain setup successfully!', '-'*10)
     print('-'*10, 'Begin query!', '-'*10)
 
-    # Answer generation
+    # Batch answer generation
     generations = []
-    for index, row in tqdm(dataset.iterrows(), total=len(dataset)):
-        query_id = row['question_id']
-        original_query = row['original_query']
-        modified_query = row['modified_query']
-        # original_score = row['original_score']
-        # modified_score = row['modified_score']
-        # gold_answers = row['answer']
-        
-        with tracing_v2_enabled(project_name=f'{args.dataset}_{args.property}_fewshot'):
-            o_generation = rag_chain.invoke({'input': original_query})
-            m_generation = rag_chain.invoke({'input': modified_query})
-        
-        o_retrieval_ids, m_retrieval_ids = [], []
-        o_retrieval_contents, m_retrieval_contents = [], []
-        for doc in o_generation['context']:
-            o_retrieval_ids.append(doc.metadata['source'])
-            o_retrieval_contents.append(doc.page_content)
-        for doc in m_generation['context']:
-            m_retrieval_ids.append(doc.metadata['source'])
-            m_retrieval_contents.append(doc.page_content)
-        o_answer = o_generation['answer']
-        m_answer = m_generation['answer']
-
-        result = {
-            'question_id': query_id,
-            'original_retrieval_ids': o_retrieval_ids,
-            'modified_retrieval_ids': m_retrieval_ids,
-            'orginal_retrieval': o_retrieval_contents,
-            'modified_retrieval': m_retrieval_contents,
-            'original_answer': o_answer,
-            'modified_answer': m_answer
-        }
-        generations.append(result)
-
+    batch_size = 20
     save_path = f'{args.result_path}/{args.dataset}/{args.property}'
     os.makedirs(save_path, exist_ok=True)
 
+    for start in range(0, len(dataset), batch_size):
+        batch_data = dataset.iloc[start: start+batch_size]
+        query_ids = batch_data['question_id'].tolist()
+        original_queries = batch_data['original_query'].tolist()
+        original_queries = [{'input': query} for query in original_queries]
+        modified_queries = batch_data['modified_query'].tolist()
+        modified_queries = [{'input': query} for query in modified_queries]
+        with tracing_v2_enabled(project_name=f'{args.dataset}_{args.property}_subset{args.subset}'):
+            o_generations = rag_chain.batch(original_queries)
+            m_generations = rag_chain.batch(modified_queries)
+        for i in range(batch_size):
+            query_id = query_ids[i]
+            
+            o_generation = o_generations[i]
+            m_generation = m_generations[i]
+            o_retrieval_ids, m_retrieval_ids = [], []
+            o_retrieval_contents, m_retrieval_contents = [], []
+            for doc in o_generation['context']:
+                o_retrieval_ids.append(doc.metadata['source'])
+                o_retrieval_contents.append(doc.page_content)
+            for doc in m_generation['context']:
+                m_retrieval_ids.append(doc.metadata['source'])
+                m_retrieval_contents.append(doc.page_content)
+            o_answer = o_generation['answer']
+            m_answer = m_generation['answer']
+            
+            result = {
+                'question_id': query_id,
+                'original_retrieval_ids': o_retrieval_ids,
+                'modified_retrieval_ids': m_retrieval_ids,
+                'orginal_retrieval': o_retrieval_contents,
+                'modified_retrieval': m_retrieval_contents,
+                'original_answer': o_answer,
+                'modified_answer': m_answer
+            }
+            generations.append(result)
+
+        print(f'Batch {start//batch_size + 1}/{len(dataset)//batch_size}')
+        if start % 200 == 0:
+            df = pd.DataFrame(generations)
+            df.to_csv(f'{save_path}/retrieval_generations_subset{args.subset}.csv')
+            print('-'*10, f'Batch {start//batch_size + 1}/{len(dataset)//batch_size}: Save retrieval and generation results successfully!', '-'*10)
+
+
+    # Answer generation
+    # generations = []
+    # for index, row in tqdm(dataset.iterrows(), total=len(dataset)):
+    #     query_id = row['question_id']
+    #     original_query = row['original_query']
+    #     modified_query = row['modified_query']
+    #     # original_score = row['original_score']
+    #     # modified_score = row['modified_score']
+    #     # gold_answers = row['answer']
+        
+    #     with tracing_v2_enabled(project_name=f'{args.dataset}_{args.property}_fewshot'):
+    #         o_generation = rag_chain.invoke({'input': original_query})
+    #         m_generation = rag_chain.invoke({'input': modified_query})
+        
+    #     o_retrieval_ids, m_retrieval_ids = [], []
+    #     o_retrieval_contents, m_retrieval_contents = [], []
+    #     for doc in o_generation['context']:
+    #         o_retrieval_ids.append(doc.metadata['source'])
+    #         o_retrieval_contents.append(doc.page_content)
+    #     for doc in m_generation['context']:
+    #         m_retrieval_ids.append(doc.metadata['source'])
+    #         m_retrieval_contents.append(doc.page_content)
+    #     o_answer = o_generation['answer']
+    #     m_answer = m_generation['answer']
+
+    #     result = {
+    #         'question_id': query_id,
+    #         'original_retrieval_ids': o_retrieval_ids,
+    #         'modified_retrieval_ids': m_retrieval_ids,
+    #         'orginal_retrieval': o_retrieval_contents,
+    #         'modified_retrieval': m_retrieval_contents,
+    #         'original_answer': o_answer,
+    #         'modified_answer': m_answer
+    #     }
+    #     generations.append(result)
+
+
     df = pd.DataFrame(generations)
-    df.to_csv(f'{save_path}/retrieval_generations.csv')
+    df.to_csv(f'{save_path}/retrieval_generations_subset{args.subset}.csv')
     print('-'*10, 'Save retrieval and generation results successfully!', '-'*10)
 
 
 if __name__ == "__main__":
     main()
+    
+# 3 min for 20 datapoint
