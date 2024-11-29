@@ -329,11 +329,11 @@ if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     
     argparser.add_argument(
-        "--output",
+        "--output_og",
         type=str,
     )
     argparser.add_argument(
-        "--output_metrics",
+        "--output_mod",
         type=str,
     )
 
@@ -344,25 +344,45 @@ if __name__ == "__main__":
     argparser.add_argument("--requests_per_minute", type=int, default=150)
     argparser.add_argument("--num_responses_per_prompt", type=int, default=1)
     argparser.add_argument("--full_sampling", type=bool, default=False)
+    argparser.add_argument("--modification", type=str, default="formality")
+    argparser.add_argument("--dataset", type=str, default="akariasai/PopQA")
+    
     args = argparser.parse_args()
 
-    dataset = load_dataset("akariasai/PopQA")
-    train_dataset = dataset['test']
-    samples=20
-    print(args.full_sampling)
-    random_samples= randomize(train_dataset, samples, True)
+    if args.dataset == "PopQA":
+        dataset = load_dataset("akariasai/PopQA")
+        print("Dataset loaded")
+        train_dataset = dataset['test']
+        samples=20
+        print(args.full_sampling)
+        random_samples= randomize(train_dataset, samples, bool(args.full_sampling))
+    
+    elif args.dataset == "EntityQuestion":
+        pass
+
+    elif args.dataset == "TriviaQA":
+        dataset = load_dataset("mandarjoshi/trivia_qa", "rc",split="test")
+        print("Dataset loaded")
+        train_dataset = dataset['test']
+        samples=20
+        print(args.full_sampling)
+        random_samples= randomize(train_dataset, samples, bool(args.full_sampling))
+    
+    
+
 
     # with open(args.prompts) as f:
     #     prompts = f.readlines()
-    formal_prompt_prefix= """You are a helpful query rewriting AI assistant. Your task is to convert the given retrieval knowledge query into a very informal and casual query that can have an impact on retrieval. 
+    if args.modification == "formality":
+        formal_prompt_prefix= """You are a helpful query rewriting AI assistant. Your task is to convert the given retrieval knowledge query into a very informal and casual query that can have an impact on retrieval. 
 Use your lingustic knowledge to convert the query to an informal query. Examples of techniques that can be used include changing Conversational Tone, using filler words, slangs and idioms, Misspellings and Typos among other things. You must always preserve the intent of the query. Original Query:"""
-    
-    read_prompt_prefix = """You are a helpful query rewriting AI assistant. Your task is to convert the given retrieval knowledge query into a query with low readaility that can have an impact on retrieval. 
+        prompts = [formal_prompt_prefix + query + ". Informal Query: " for query in random_samples]
+    else:
+        read_prompt_prefix = """You are a helpful query rewriting AI assistant. Your task is to convert the given retrieval knowledge query into a query with low readaility that can have an impact on retrieval. 
 Use your lingustic knowledge to convert the query to a low readability query. Examples of techniques that can be used include increasing lexical and syntactic complexity, semantic ambiguity, among other things. You must always preserve the intent of the query. Original Query:"""
     # prompts = [formal_prompt_prefix + query + ". Informal Query: " for query in random_samples]
-    prompts = [read_prompt_prefix + query + ". Query with Low Readability: " for query in random_samples]
-    # header = prompts[0].split("\t")
-    # prompts = prompts[1:]  # skipping header for now
+        prompts = [read_prompt_prefix + query + ". Query with Low Readability: " for query in random_samples]
+    
     results = main(
         prompts,
         args.model,
@@ -386,6 +406,10 @@ Use your lingustic knowledge to convert the query to a low readability query. Ex
     concreteness=[]
     formality_score=[]
     readability= []
+    formal_bert_q=[]
+    concreteness_q=[]
+    formality_score_q=[]
+    readability_q= []
     for i in range(len(final_header)):
         text= final_header['response'][i]
         formal_bert.append(predict_formality(tokenizer=tokenizer,model=model,text=text))
@@ -393,18 +417,37 @@ Use your lingustic knowledge to convert the query to a low readability query. Ex
         formality_score.append(calculate_formality(text))
         readability.append(flesch_reading_ease(text))
 
+        query_text= final_header['query'][i]
+        formal_bert_q.append(predict_formality(tokenizer=tokenizer,model=model,text=query_text))
+        concreteness_q.append(sentence_concreteness(query_text))
+        formality_score_q.append(calculate_formality(query_text))
+        readability_q.append(flesch_reading_ease(query_text))
+
+    df_q= pd.DataFrame({
+        "question": final_header['query'],
+        "Roberta Formality Ranking Score": formal_bert_q,
+        "Concreteness Score": concreteness_q,
+        "Linguistic Formality Score": formality_score_q,
+        "Readability": readability_q
+    })
+
+    df_q.to_csv(args.output_og, index=None)
+
 
     df = pd.DataFrame({
-        "Original Query": final_header['query'],
-        "Query": final_header['response'],
+        # "question": final_header['query'],
+        "question": final_header['response'],
         "Roberta Formality Ranking Score": formal_bert,
         "Concreteness Score": concreteness,
         "Linguistic Formality Score": formality_score,
         "Readability": readability
     })
 
-    df.to_csv(args.output_metrics, index=None)
+    df.to_csv(args.output_mod, index=None)
 
     
+#What is the terminal command to run this file with TriviaQA dataset and formality modification
+#python query_rewriting/query_rewriting.py --output_og sample_testing/output_og.csv --output_mod sample_testing/output_mod.csv --dataset TriviaQA --modification formality --full_sampling False
+
 
 
