@@ -234,32 +234,32 @@ async def rewrite_query_until_valid(
             formality_val = predict_formality_prob(rewritten_text)
             if formality_val < 0.5:
                 # Passed => now compute all metrics for final storage
-                all_vals = compute_all_metrics(rewritten_text)
-                all_vals["sbert_similarity"] = sbert_val
-                return rewritten_text, attempt, all_vals
+                # all_vals = compute_all_metrics(rewritten_text)
+                # all_vals["sbert_similarity"] = sbert_val
+                return rewritten_text, attempt
 
         elif args.modification == "readability":
             # Threshold: < 50
             readability_val = flesch_reading_ease(rewritten_text)
             if readability_val < 50.0:
                 # Passed => compute all metrics
-                all_vals = compute_all_metrics(rewritten_text)
-                all_vals["sbert_similarity"] = sbert_val
-                return rewritten_text, attempt, all_vals
+                # all_vals = compute_all_metrics(rewritten_text)
+                # all_vals["sbert_similarity"] = sbert_val
+                return rewritten_text, attempt
 
         elif args.modification == "politeness":
             # Threshold: < 0.5
             polite_val = predict_politeness_score(rewritten_text)
             if polite_val < 0.5:
                 # Passed => compute all metrics
-                all_vals = compute_all_metrics(rewritten_text)
-                all_vals["sbert_similarity"] = sbert_val
-                return rewritten_text, attempt, all_vals
+                # all_vals = compute_all_metrics(rewritten_text)
+                # all_vals["sbert_similarity"] = sbert_val
+                return rewritten_text, attempt
 
         # If none passed, go to next attempt
 
     # If we exhaust max_retries with no pass, return failure
-    return None, attempt, None
+    return None, attempt
 
 ###############################################################################
 # Argument Parsing
@@ -299,6 +299,8 @@ def parse_args():
                         help="top_p for openAI calls.")
     parser.add_argument("--requests_per_minute", type=int, default=150,
                         help="Rate limit for openAI requests.")
+    parser.add_argument("--subset_size", type=int, default=0,
+                        help="If > 0, only process the top N rows from top_5000.csv. Default=0 => use all.")
     return parser.parse_args()
 
 ###############################################################################
@@ -323,6 +325,11 @@ async def main():
     if "query" not in df_top5k.columns:
         logging.error("No 'query' column in top_5k CSV.")
         return
+
+    # =========== NEW LOGIC FOR --subset_size =========== 
+    if args.subset_size > 0 and args.subset_size < len(df_top5k):
+        logging.info(f"Taking only the top {args.subset_size} rows from {args.top5k_path}")
+        df_top5k = df_top5k.head(args.subset_size)
 
     top5k_queries = df_top5k["query"].unique().tolist()
     logging.info(f"Loaded top_5k with {len(top5k_queries)} unique queries (expected ~5000).")
