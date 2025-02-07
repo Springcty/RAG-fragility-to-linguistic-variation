@@ -1,20 +1,27 @@
 import argparse
 import os
-import csv
-import time
 import logging
 import asyncio
 import pandas as pd
 import aiolimiter
 import openai
-from tqdm.asyncio import tqdm_asyncio
 from tqdm import tqdm
 import torch
 from sentence_transformers import SentenceTransformer, util
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
+
+import re
+import nltk
+import random
+import numpy as np
+import unicodedata
 
 # ============ Import your prompts.py ==============
-# from prompts import PROMPTS  # Make sure prompts.py is in the same folder or adjust import path
+from prompts import PROMPTS  # Adjust path if needed
+
+# Make sure NLTK resources are available
+nltk.download('punkt', quiet=True)
+nltk.download('averaged_perceptron_tagger', quiet=True)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -24,15 +31,23 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 device = "cuda" if torch.cuda.is_available() else "cpu"
 logging.info(f"Using device: {device}")
 
-# SBERT model
+# SBERT model (semantic similarity)
 sbert_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
 
-# Formality model
+# Formality model (RoBERTa)
 tokenizer_formality = AutoTokenizer.from_pretrained("s-nlp/roberta-base-formality-ranker")
 model_formality = AutoModelForSequenceClassification.from_pretrained("s-nlp/roberta-base-formality-ranker").to(device)
 
+# Politeness model (Intel/polite-guard)
+politeness_pipeline = pipeline(
+    'text-classification',
+    model='Intel/polite-guard',
+    device=0 if device == "cuda" else -1,
+    return_all_scores=True
+)
+
 ###############################################################################
-# SBERT & Formality Helpers
+# Metric Helpers
 ###############################################################################
 def compute_sbert_similarity(text1, text2):
     emb = sbert_model.encode([text1, text2], device=device)
@@ -41,39 +56,100 @@ def compute_sbert_similarity(text1, text2):
 
 def predict_formality_prob(text: str) -> float:
     """
-    Returns the probability that `text` is 'formal'.
-    We'll treat <0.5 as 'informal enough'.
+    Probability that text is formal (0..1). 
+    We'll treat <0.5 as "informal enough" if modification=='formality'.
     """
     inputs = tokenizer_formality(text, return_tensors="pt", truncation=True, padding=True).to(device)
     with torch.no_grad():
         outputs = model_formality(**inputs)
     logits = outputs.logits
     probs = torch.softmax(logits, dim=1)
-    formal_probability = probs[0][1].item()
-    return formal_probability
+    return probs[0][1].item()  # Probability of "formal"
+
+def predict_politeness_score(text: str) -> float:
+    """
+    Probability of text being polite + somewhat polite. 
+    We'll treat >0.6 as polite enough if modification=='politeness'.
+    """
+    result = politeness_pipeline(text)[0]
+    polite_score = 0.0
+    for d in result:
+        if "polite" in d['label'].lower():
+            polite_score += d['score']
+    return polite_score
+
+def count_syllables(word: str) -> int:
+    word = word.lower()
+    syllable_count = len(re.findall(r'[aeiouy]+', word))
+    if word.endswith("e"):
+        syllable_count -= 1
+    return max(1, syllable_count)
+
+def flesch_reading_ease(text: str) -> float:
+    """
+    Higher is more readable. 
+    We'll treat >60 as passing if modification=='readability'.
+    """
+    sentences = [s for s in re.split(r'[.!?]', text) if s.strip()]
+    words = re.findall(r'\w+', text)
+
+    if not sentences or not words:
+        return 0.0  # If no text, just return 0
+
+    avg_words_per_sentence = len(words) / len(sentences)
+    avg_syllables_per_word = sum(count_syllables(w) for w in words) / len(words)
+
+    return 206.835 - (1.015 * avg_words_per_sentence) - (84.6 * avg_syllables_per_word)
+
+def compute_all_metrics(text: str) -> dict:
+    """
+    Return a dict with the four columns:
+      - 'Response Formality Score'
+      - 'Response Readability Score'
+      - 'Response Politeness Score'
+      - 'sbert_similarity' is computed elsewhere when we have the original query
+        so we won't do it here. We'll do sbert separately.
+    """
+    return {
+        "Response Formality Score": predict_formality_prob(text),
+        "Response Readability Score": flesch_reading_ease(text),
+        "Response Politeness Score": predict_politeness_score(text),
+    }
+
+def passes_threshold(modification: str, row_metrics: dict) -> bool:
+    """
+    Evaluate pass/fail based on the chosen modification's metric + sbert.
+    row_metrics must contain:
+      - 'Response Formality Score'
+      - 'Response Readability Score'
+      - 'Response Politeness Score'
+      - 'sbert_similarity'
+    """
+    sbert_val = row_metrics["sbert_similarity"]
+    if sbert_val <= 0.7:
+        return False
+
+    if modification == "formality":
+        return row_metrics["Response Formality Score"] < 0.5
+    elif modification == "readability":
+        return row_metrics["Response Readability Score"] > 60.0
+    elif modification == "politeness":
+        return row_metrics["Response Politeness Score"] > 0.6
+    else:
+        raise ValueError(f"Unknown modification: {modification}")
 
 ###############################################################################
-# OPENAI ASYNC SETUP (from your provided script)
+# OPENAI ASYNC SETUP
 ###############################################################################
 import openai
-import logging
-import random
-import numpy as np
-import unicodedata
-import re
 
-# We assume you have an environment variable OPENAI_API_KEY
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     raise ValueError("OPENAI_API_KEY environment variable must be set.")
 
-# Construct an AsyncOpenAI client
 client = openai.AsyncOpenAI(api_key=api_key)
 
 async def openai_request(messages, model, temperature, max_tokens, top_p, limiter):
-    """
-    Calls openai, retrying up to 3 times on certain errors, using `limiter`.
-    """
     async with limiter:
         for _ in range(3):  # 3 retries
             try:
@@ -97,10 +173,6 @@ async def openai_request(messages, model, temperature, max_tokens, top_p, limite
         return None  # failed all retries
 
 async def generate_openai_response(messages, args, limiter):
-    """
-    Single-call version to request a new rewriting from OpenAI.
-    (For a single query at a time.)
-    """
     resp = await openai_request(
         messages=messages,
         model=args.model,
@@ -114,7 +186,7 @@ async def generate_openai_response(messages, args, limiter):
     return resp.choices[0].message.content.strip()
 
 ###############################################################################
-# Rewriting logic: "rewrite_query_until_valid"
+# Rewriting logic
 ###############################################################################
 async def rewrite_query_until_valid(
     query_text: str,
@@ -124,71 +196,110 @@ async def rewrite_query_until_valid(
     max_retries=5
 ):
     """
-    Repeatedly calls openai with the prompt until we get formality<0.5 & sbert>0.7 
-    or run out of retries. Returns (best_rewrite, attempts).
-    If we never succeed, best_rewrite=None.
+    Repeatedly calls OpenAI with the prompt until it meets:
+      - sbert_similarity > 0.7
+      - relevant metric < threshold (see below)
+      or runs out of retries.
+
+    Returns:
+        best_rewrite (str or None),
+        attempts (int),
+        final_metrics (dict or None) => contains 'Response Formality Score', 'Response Readability Score', 
+                                        'Response Politeness Score', 'sbert_similarity'
     """
     attempt = 0
     while attempt < max_retries:
         attempt += 1
 
-        # Format the prompt from 'prompts.py' plus the original query
+        # Build messages from prompt + original query
         full_prompt = prompt_template + "\n" + query_text
         messages = [{"role": "user", "content": full_prompt}]
 
-        # Actually call openAI
+        # Request a rewriting from OpenAI
         rewritten_text = await generate_openai_response(messages, args, limiter)
         if not rewritten_text:
-            continue  # try again if we got an empty or None
+            # If we got an empty or None response, try again
+            continue
 
-        # Evaluate
-        formality_val = predict_formality_prob(rewritten_text)
+        # Compute semantic similarity with original query
         sbert_val = compute_sbert_similarity(query_text, rewritten_text)
 
-        if (formality_val < 0.5) and (sbert_val > 0.7):
-            return rewritten_text, attempt
-        # else keep trying
+        # If SBERT is not high enough, skip immediately
+        if sbert_val <= 0.7:
+            continue
 
-    return None, attempt  # we failed
+        # Compute only the relevant metric
+        if args.modification == "formality":
+            # Threshold: < 0.5
+            formality_val = predict_formality_prob(rewritten_text)
+            if formality_val < 0.5:
+                # Passed => now compute all metrics for final storage
+                all_vals = compute_all_metrics(rewritten_text)
+                all_vals["sbert_similarity"] = sbert_val
+                return rewritten_text, attempt, all_vals
+
+        elif args.modification == "readability":
+            # Threshold: < 50
+            readability_val = flesch_reading_ease(rewritten_text)
+            if readability_val < 50.0:
+                # Passed => compute all metrics
+                all_vals = compute_all_metrics(rewritten_text)
+                all_vals["sbert_similarity"] = sbert_val
+                return rewritten_text, attempt, all_vals
+
+        elif args.modification == "politeness":
+            # Threshold: < 0.5
+            polite_val = predict_politeness_score(rewritten_text)
+            if polite_val < 0.5:
+                # Passed => compute all metrics
+                all_vals = compute_all_metrics(rewritten_text)
+                all_vals["sbert_similarity"] = sbert_val
+                return rewritten_text, attempt, all_vals
+
+        # If none passed, go to next attempt
+
+    # If we exhaust max_retries with no pass, return failure
+    return None, attempt, None
 
 ###############################################################################
 # Argument Parsing
 ###############################################################################
 def parse_args():
     parser = argparse.ArgumentParser(description="""
-    1) Reads top_5k.csv + a modified CSV (e.g. prompt_1_modified.csv).
-    2) Computes SBERT for entire modified CSV => saves as prompt_1_modified_bert.csv.
-    3) Partitions queries: pass vs missing/fail.
-    4) Rewrites missing/fail queries using your openAI approach with prompts.py.
-    5) Saves final 5k.
-    6) Prints stats (missing, failing, rewriting attempts, etc.).
+    1) Reads top_5k.csv + a modified CSV (prompt_*_modified.csv).
+    2) Ensures it has the columns:
+        - 'Response Formality Score'
+        - 'Response Readability Score'
+        - 'Response Politeness Score'
+        - 'sbert_similarity'
+    3) Partitions pass/fail based on user-chosen modification + sbert>0.7.
+    4) Rewrites fail queries; saves final with columns above + 'passed'.
     """)
     parser.add_argument("--top5k_path", type=str, required=True,
-                        help="Path to the top_5000.csv file (which has 5000 queries).")
+                        help="Path to the top_5000.csv with 'query' column.")
     parser.add_argument("--modified_csv_path", type=str, required=True,
-                        help="Path to the prompt_*_modified.csv file. We'll compute SBERT, rename to _bert, etc.")
+                        help="Path to the prompt_*_modified.csv file. If columns are missing, we compute them.")
     parser.add_argument("--output_final_csv", type=str, default="final_df.csv",
-                        help="Where to save the final 5k output.")
+                        help="Where to save the final 5k output CSV (also writes JSONL).")
     parser.add_argument("--max_retries", type=int, default=5,
                         help="Max rewriting attempts per query.")
     parser.add_argument("--prompt_type", type=str, default="prompt_1",
-                        help="Which prompt from PROMPTS to use.")
+                        help="Which prompt in PROMPTS to use.")
     parser.add_argument("--modification", type=str, default="formality",
                         choices=["formality","readability","politeness"],
-                        help="Which modification to reference in PROMPTS.")
-    # The usual OpenAI arguments from your script
+                        help="Which metric to use for pass/fail checking.")
+    # OpenAI arguments
     parser.add_argument("--model", type=str, default="gpt-3.5-turbo",
                         help="OpenAI model name for rewriting.")
     parser.add_argument("--temperature", type=float, default=1.0,
                         help="Temperature for rewriting.")
     parser.add_argument("--max_response_tokens", type=int, default=100,
-                        help="Max tokens for the rewriting.")
+                        help="Max tokens for rewriting.")
     parser.add_argument("--top_p", type=float, default=1.0,
-                        help="top_p for openai calls.")
+                        help="top_p for openAI calls.")
     parser.add_argument("--requests_per_minute", type=int, default=150,
-                        help="Rate limit for openAI.")
+                        help="Rate limit for openAI requests.")
     return parser.parse_args()
-
 
 ###############################################################################
 # Main
@@ -196,15 +307,13 @@ def parse_args():
 async def main():
     args = parse_args()
 
-    # =========== Load your PROMPTS from prompts.py ==============
-    from prompts import PROMPTS  # Ensure prompts.py is in the same dir or adjust path
-
+    # Load prompt template
     if args.modification not in PROMPTS:
         raise ValueError(f"No prompts found for modification={args.modification}")
     if args.prompt_type not in PROMPTS[args.modification]:
         raise ValueError(f"No prompt_type={args.prompt_type} for modification={args.modification}")
-    #log the prompt template 
-    logging.info(f"Using prompt template: {PROMPTS[args.modification][args.prompt_type]}")
+    prompt_template = PROMPTS[args.modification][args.prompt_type]
+    logging.info(f"Using prompt template for {args.modification}: {prompt_template}")
 
     # 1) Load top_5k
     if not os.path.isfile(args.top5k_path):
@@ -216,7 +325,7 @@ async def main():
         return
 
     top5k_queries = df_top5k["query"].unique().tolist()
-    logging.info(f"Loaded top_5k with {len(top5k_queries)} unique queries (should be 5000).")
+    logging.info(f"Loaded top_5k with {len(top5k_queries)} unique queries (expected ~5000).")
 
     # 2) Load the modified CSV
     if not os.path.isfile(args.modified_csv_path):
@@ -227,28 +336,48 @@ async def main():
     if "query" not in df_mod.columns:
         logging.error("No 'query' column in the modified CSV.")
         return
-    if "Response Formality Score" not in df_mod.columns:
-        logging.error("No 'Response Formality Score' in the modified CSV.")
-        return
 
-    # 3) Compute SBERT across entire modified CSV if not present, then save as _bert
-    if "sbert_similarity" not in df_mod.columns:
-        logging.info("Computing SBERT similarity for each row in modified CSV...")
-        sbert_vals = []
-        for i in tqdm(range(len(df_mod)), desc="SBERT for Modified"):
+    # We'll ensure the 4 columns exist: 'Response Formality Score', 'Response Readability Score',
+    # 'Response Politeness Score', 'sbert_similarity'.
+    needed_cols = [
+        "Response Formality Score",
+        "Response Readability Score",
+        "Response Politeness Score",
+        "sbert_similarity"
+    ]
+    missing_cols = [col for col in needed_cols if col not in df_mod.columns]
+
+    if missing_cols:
+        logging.info(f"Missing columns {missing_cols}. Computing them now...")
+        # We'll compute the metrics for each row
+        new_data = {c: [] for c in missing_cols}
+
+        for i in tqdm(range(len(df_mod)), desc="Computing Missing Metrics"):
             row = df_mod.iloc[i]
-            q_text = str(row["query"])
-            resp_text = str(row.get("response",""))
-            sim = compute_sbert_similarity(q_text, resp_text)
-            sbert_vals.append(sim)
-        df_mod["sbert_similarity"] = sbert_vals
+            q = str(row["query"])
+            resp = str(row.get("response", ""))
 
+            # Compute metrics for the response
+            if "Response Formality Score" in missing_cols:
+                new_data["Response Formality Score"].append(predict_formality_prob(resp))
+            if "Response Readability Score" in missing_cols:
+                new_data["Response Readability Score"].append(flesch_reading_ease(resp))
+            if "Response Politeness Score" in missing_cols:
+                new_data["Response Politeness Score"].append(predict_politeness_score(resp))
+            if "sbert_similarity" in missing_cols:
+                new_data["sbert_similarity"].append(compute_sbert_similarity(q, resp))
+
+        # Append new columns
+        for c in missing_cols:
+            df_mod[c] = new_data[c]
+
+        # Save an updated CSV for reference
         base, ext = os.path.splitext(args.modified_csv_path)
-        out_bert = base + "_bert" + ext
-        df_mod.to_csv(out_bert, index=False)
-        logging.info(f"Saved updated CSV with SBERT as: {out_bert}")
+        out_path = base + "_bert" + ext
+        df_mod.to_csv(out_path, index=False)
+        logging.info(f"Saved updated CSV with newly computed metrics as: {out_path}")
 
-    # Convert df_mod to dict for quick lookup
+    # Convert df_mod into a dict for quick lookup by query
     mod_dict = {}
     for i, row in df_mod.iterrows():
         mod_dict[row["query"]] = row
@@ -262,19 +391,25 @@ async def main():
     for _, row in df_top5k.iterrows():
         q = row["query"]
         if q in mod_dict:
-            # found
             mrow = mod_dict[q]
-            f_score = float(mrow["Response Formality Score"])
-            s_score = float(mrow["sbert_similarity"])
-            if (f_score < 0.5) and (s_score > 0.7):
-                # pass => final
+            row_metrics = {
+                "Response Formality Score": float(mrow["Response Formality Score"]),
+                "Response Readability Score": float(mrow["Response Readability Score"]),
+                "Response Politeness Score": float(mrow["Response Politeness Score"]),
+                "sbert_similarity": float(mrow["sbert_similarity"])
+            }
+            # Check if it passes
+            if passes_threshold(args.modification, row_metrics):
+                # Pass => final
                 new_row = dict(row)
-                new_row["response"] = mrow.get("response","")
-                new_row["Response Formality Score"] = f_score
-                new_row["sbert_similarity"] = s_score
+                new_row["response"] = mrow.get("response", "")
+                new_row["Response Formality Score"] = row_metrics["Response Formality Score"]
+                new_row["Response Readability Score"] = row_metrics["Response Readability Score"]
+                new_row["Response Politeness Score"] = row_metrics["Response Politeness Score"]
+                new_row["sbert_similarity"] = row_metrics["sbert_similarity"]
+                new_row["passed"] = True
                 final_rows.append(new_row)
             else:
-                # failing
                 failing_count += 1
                 work_rows.append(dict(row))
         else:
@@ -288,10 +423,8 @@ async def main():
     logging.info(f"Failing queries: {failing_count}")
     logging.info(f"Total needing rewriting: {len(work_rows)}")
 
-    # 5) Rewrite the work queries using your async approach + prompt from prompts.py
-    # We'll build a rate limiter
+    # 5) Rewrite the work queries
     limiter = aiolimiter.AsyncLimiter(args.requests_per_minute)
-    prompt_template = PROMPTS[args.modification][args.prompt_type]
     total_rerun_count = 0
 
     for wr in tqdm(work_rows, desc="Rewriting"):
@@ -303,48 +436,46 @@ async def main():
             args=args,
             max_retries=args.max_retries
         )
-        # attempts => how many times we called openAI
         total_rerun_count += (attempts - 1)
 
         if best_rewrite is None:
-            # never passed => store a row with "failed"
+            # never passed
             new_row = dict(wr)
             new_row["response"] = ""
             new_row["Response Formality Score"] = None
+            new_row["Response Readability Score"] = None
+            new_row["Response Politeness Score"] = None
             new_row["sbert_similarity"] = None
             new_row["passed"] = False
             final_rows.append(new_row)
         else:
-            # success => compute final formality + sbert
-            form_prob = predict_formality_prob(best_rewrite)
-            sim_val = compute_sbert_similarity(q, best_rewrite)
-
+            # success => compute the four columns
+            metric_vals = compute_all_metrics(best_rewrite)
+            sbert_val = compute_sbert_similarity(q, best_rewrite)
             new_row = dict(wr)
             new_row["response"] = best_rewrite
-            new_row["Response Formality Score"] = form_prob
-            new_row["sbert_similarity"] = sim_val
+            new_row["Response Formality Score"] = metric_vals["Response Formality Score"]
+            new_row["Response Readability Score"] = metric_vals["Response Readability Score"]
+            new_row["Response Politeness Score"] = metric_vals["Response Politeness Score"]
+            new_row["sbert_similarity"] = sbert_val
             new_row["passed"] = True
             final_rows.append(new_row)
 
-    logging.info(f"Rewriting done. total re-run attempts beyond first: {total_rerun_count}")
+    logging.info(f"Rewriting done. total re-run attempts (beyond first) = {total_rerun_count}")
     logging.info(f"final_rows length: {len(final_rows)} (should be 5000).")
 
     # 6) Save final
     df_final = pd.DataFrame(final_rows)
-    output_jsonl_path = args.output_final_csv.replace(".csv", ".jsonl")
-    df_final.to_json(output_jsonl_path, orient="records", lines=True)
-    logging.info(f"Saved final 5k rows to {output_jsonl_path}")
-    logging.info(f"Saved final 5k rows to {args.output_final_csv}")
+    df_final["passed"] = df_final["passed"].fillna(False)
 
+    output_jsonl_path = args.output_final_csv.replace(".csv", ".jsonl")
+    df_final.to_csv(args.output_final_csv, index=False)
+    df_final.to_json(output_jsonl_path, orient="records", lines=True)
+
+    logging.info(f"Saved final 5k rows to {args.output_final_csv}")
+    logging.info(f"Saved final 5k rows to {output_jsonl_path}")
+
+    logging.info("DONE")
 
 if __name__ == "__main__":
-    # We run the async main
     asyncio.run(main())
-
-#Examples usage for PopQA:
-# python query_rewriting/non_candidates.py   --top5k_path data/user_data/neelbhan/top_5k/PopQA/formality/top_5000.csv   --modified_csv_path data/user_data/tianyuca/QL_dataset/PopQA/formality/prompt_1_modified.csv   --output_final_csv data/user_data/tianyuca/QL_dataset/PopQA/formality/prompt_1_final_df.jsonl   --max_retries 5
-
-
-
-
-#Examples usage for natural_questions:
