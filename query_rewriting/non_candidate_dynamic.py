@@ -110,6 +110,22 @@ def compute_all_metrics(text: str) -> dict:
         "Response Politeness Score": predict_politeness_score(text),
     }
 
+def test_loading(args):
+    if not os.path.isfile(args.big_csv_path):
+        logging.error(f"Big CSV not found: {args.big_csv_path}")
+        return
+    df_big = pd.read_csv(args.big_csv_path)
+    if "query" not in df_big.columns:
+        logging.error("No 'query' column in the big CSV.")
+        return
+
+    if args.sample_size is not None and args.sample_size > 0:
+        df_big = df_big.head(args.sample_size)
+        logging.info(f"Using only the top {args.sample_size} rows from the big CSV.")
+
+    logging.info(f"Loaded big CSV with {len(df_big)} queries (sample_size applied if provided).")
+    print(df_big.head())  # You can adjust what you want to print here.
+
 ###############################################################################
 # THRESHOLD CHECK
 ###############################################################################
@@ -235,6 +251,7 @@ async def rewrite_query_until_valid(
     # if we run out of attempts
     return None, attempt
 
+
 ###############################################################################
 # Argument Parsing
 ###############################################################################
@@ -263,6 +280,10 @@ def parse_args():
     parser.add_argument("--modification", type=str, default="formality",
                         choices=["formality","readability","politeness"],
                         help="Which metric to use for pass/fail checking.")
+    parser.add_argument("--sample_size", type=int, default=None,
+                        help="If provided, only use the top N rows from the big CSV. Useful for testing.")
+    parser.add_argument("--test_loading", action="store_true",
+                        help="If set, only test loading the CSV (and applying sample_size) and exit.")
     # OpenAI arguments
     parser.add_argument("--model", type=str, default="gpt-3.5-turbo",
                         help="OpenAI model for rewriting.")
@@ -274,6 +295,7 @@ def parse_args():
                         help="top_p for openAI calls.")
     parser.add_argument("--requests_per_minute", type=int, default=150,
                         help="Rate limit for openAI requests.")
+    
 
     return parser.parse_args()
 
@@ -284,6 +306,10 @@ async def main():
     args = parse_args()
 
     # 1) Load prompt template
+    if args.test_loading:
+        logging.info("Running in test loading mode.")
+        test_loading(args)
+        return
     if args.modification not in PROMPTS:
         raise ValueError(f"No prompts found for modification={args.modification}")
     if args.prompt_type not in PROMPTS[args.modification]:
@@ -300,7 +326,12 @@ async def main():
         logging.error("No 'query' column in the big CSV.")
         return
 
-    logging.info(f"Loaded big CSV with {len(df_big)} queries.")
+    # NEW: Optionally slice df_big to the first sample_size rows.
+    if args.sample_size is not None and args.sample_size > 0:
+        df_big = df_big.head(args.sample_size)
+        logging.info(f"Using only the top {args.sample_size} rows from the big CSV.")
+
+    logging.info(f"Loaded big CSV with {len(df_big)} queries (sample_size applied if provided).")
     logging.info("Goal: find 5k queries that pass thresholds (with rewriting).")
 
     # 3) Try to load modified CSV if provided
