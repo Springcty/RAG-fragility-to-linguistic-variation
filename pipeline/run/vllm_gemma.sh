@@ -14,7 +14,7 @@ conda activate vllm_server
  
 echo "google/gemma-2-9b-it"
 export VLLM_LOGGING_LEVEL=ERROR
-echo "Port: 9010"
+echo "Port: 8080"
 
 vllm serve google/gemma-2-9b-it \
     --download-dir /data/user_data/tianyuca/models/ \

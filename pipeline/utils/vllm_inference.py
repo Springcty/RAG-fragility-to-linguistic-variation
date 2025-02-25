@@ -35,6 +35,10 @@ def format_prompt(prompt_input):
     return [{'role': 'system', 'content': prompt_input[0]}, {'role': 'user', 'content': prompt_input[1]}]
 
 
+def format_prompt_gemma(prompt_input):
+    return[{'role': 'user', 'content': prompt_input[0] + '\n' + prompt_input[1]}]
+
+
 async def _throttled_openai_chat_completion_acreate(
     client,
     model,
@@ -138,7 +142,10 @@ def vllm_inference(
     requests_per_minute,
     num_responses_per_prompt,
 ):
-    messages_list = [format_prompt(prompt) for prompt in prompts]
+    if 'gemma' in model:
+        messages_list = [format_prompt_gemma(prompt) for prompt in prompts]
+    else:
+        messages_list = [format_prompt(prompt) for prompt in prompts]
     predictions = asyncio.run(
         generate_from_openai_chat_completion(
             client=client,

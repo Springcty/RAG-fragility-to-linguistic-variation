@@ -15,7 +15,7 @@ parser.add_argument('--retrieval', type=str, default='ModernBERT',
                     help='The retrieval method from ["ModernBERT", "contriever"]')
 parser.add_argument('--dataset', type=str, default='popqa',
                     help='Name of the QA dataset from ["popqa", "entity_questions" "ms_marco" "natural_questions"]')
-parser.add_argument('--linguistics', type=str, default='readability',
+parser.add_argument('--linguistics', type=str, default='politeness',
                     help='The linguistic properties of the query to be modified, from["readability", "formality", "politeness" "grammatical_correctness"]')
 parser.add_argument('--modified', type=str, default='original',
                     help='The type of query to be modified, from ["original", "modified"]')
@@ -53,14 +53,14 @@ def combine_texts(ctxs_list):
 def format_rag_prompt(data_df):
     system_prompt_template = '''You are a professional question-answer task assistant. Use the following pieces of retrieved context to answer the question briefly. 
 
-    Context: 
-    {contexts}
+Context: 
+{contexts}
 
-    Below are examples of questions and answers:
-    {few_shot_examples}
+Below are examples of questions and answers:
+{few_shot_examples}
 
-    Now, it's your turn to answer the question below. The answer should contain ONLY one sentence and DO NOT explain reasons.
-    '''
+Now, it's your turn to answer the question below. The answer should contain ONLY one sentence and DO NOT explain reasons.
+'''
     user_prompt_template = 'Question: {question}\nAnswer:'
     
     # Generate prompt list for vLLM generation
@@ -115,6 +115,10 @@ def main():
     file_name = os.path.join(data_path, f'{args.modified}_retrieval.jsonl')
     print(f'Loading queries and retrieval results from {file_name}')
     data_df = pd.read_json(file_name, lines=True)
+    
+    
+    data_df = data_df.iloc[:10].copy()
+    
     
     # Generate context from several retrieval documents
     print('Creating combined retrieval context...')
