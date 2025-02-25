@@ -1,0 +1,154 @@
+import argparse
+import os
+import pandas as pd
+
+from vllm import LLM, SamplingParams
+from openai import AsyncOpenAI
+from utils.few_shot_prompting import readability_2_shot, formality_2_shot
+from utils.vllm_inference import vllm_inference
+
+
+parser = argparse.ArgumentParser(description='RAG pipeline')
+parser.add_argument('--data_path', type=str, default='/data/group_data/maartens_lab_miis24/QL_result',
+                    help='The root path to load the retrieval results')
+parser.add_argument('--retrieval', type=str, default='ModernBERT', 
+                    help='The retrieval method from ["ModernBERT", "contriever"]')
+parser.add_argument('--dataset', type=str, default='popqa',
+                    help='Name of the QA dataset from ["popqa", "entity_questions" "ms_marco" "natural_questions"]')
+parser.add_argument('--linguistics', type=str, default='readability',
+                    help='The linguistic properties of the query to be modified, from["readability", "formality", "politeness" "grammatical_correctness"]')
+parser.add_argument('--modified', type=str, default='original',
+                    help='The type of query to be modified, from ["original", "modified"]')
+
+
+# retrieval
+parser.add_argument('--n_docs', type=int, default=5,
+                    help='Number of documents to retrieve')
+
+# vllm generation
+parser.add_argument('--vllm_url', type=str, default='http://babel-X-X:9010/v1',
+                    help='The URL of the vLLM server')
+parser.add_argument('--model_name', type=str, default='meta-llama/Llama-3.1-8B-Instruct',
+                    help='LLM used for generation')
+parser.add_argument('--temperature', type=float, default=0.5,
+                    help='The temperature for generation')
+parser.add_argument('--max_tokens', type=int, default=64,
+                    help='The maximum tokens for generation')
+parser.add_argument('--top_p', type=float, default=0.90,
+                    help='The top p for generation')
+parser.add_argument('--requests_per_minute', type=int, default=150,
+                    help='The requests per minute for generation')
+parser.add_argument('--num_responses_per_prompt', type=int, default=1,
+                    help='The number of responses per prompt for generation')
+
+
+args = parser.parse_args()
+
+
+def combine_texts(ctxs_list):
+    return '\n\n'.join(ctx['text'] for ctx in ctxs_list)
+
+
+# Set prompt template for RAG with few-shot examples
+def format_rag_prompt(data_df):
+    system_prompt_template = '''You are a professional question-answer task assistant. Use the following pieces of retrieved context to answer the question briefly. 
+
+    Context: 
+    {contexts}
+
+    Below are examples of questions and answers:
+    {few_shot_examples}
+
+    Now, it's your turn to answer the question below. The answer should contain ONLY one sentence and DO NOT explain reasons.
+    '''
+    user_prompt_template = 'Question: {question}\nAnswer:'
+    
+    # Generate prompt list for vLLM generation
+    data_df['prompt'] = data_df.apply(
+        lambda row: (
+            system_prompt_template.format(
+                contexts=row['combined_text'],
+                few_shot_examples=readability_2_shot if args.linguistics == 'readability' else formality_2_shot,
+            ),
+            user_prompt_template.format(question=row['question'])
+        ),
+        axis=1,
+    )
+    return data_df['prompt'].tolist()
+
+# Set prompt template for non-retrieval generation, with few-shot examples
+def format_non_retrieval_prompt(data_df):
+    prompt_template = '''You are a professional question-answer task assistant. Below are examples of questions and answers:
+{few_shot_examples}
+Now, it's your turn to answer the question below. The answer should contain ONLY one sentence and DO NOT explain reasons.
+
+Question: {question}
+Answer:'''
+    
+    # Generate prompt list for vLLM generation
+    data_df['prompt'] = data_df.apply(
+        lambda row: prompt_template.format(
+            few_shot_examples=readability_2_shot if args.linguistics == 'readability' else formality_2_shot,
+            question=row['question'],
+        ),
+        axis=1,
+    )
+    return data_df['prompt'].tolist()
+
+
+def offline_generation(prompts):
+    sampling_params = SamplingParams(
+        temperature=0.5,
+        top_p=0.90,
+        max_tokens=64,
+    )
+    llm = LLM(model=args.model_name, download_dir='/data/user_data/tianyuca/models')
+    completion = llm.generate(prompts, sampling_params)
+    return completion
+
+
+def main():
+    data_path = os.path.join(args.data_path, args.dataset, args.linguistics, args.retrieval)
+    result_path = os.path.join(data_path, args.model_name.split('/')[1])
+    
+    # Load the dataset with retrievals
+    file_name = os.path.join(data_path, f'{args.modified}_retrieval.jsonl')
+    print(f'Loading queries and retrieval results from {file_name}')
+    data_df = pd.read_json(file_name, lines=True)
+    
+    # Generate context from several retrieval documents
+    print('Creating combined retrieval context...')
+    data_df['ctxs'] = data_df['ctxs'].apply(lambda x: x[:args.n_docs])
+    data_df['combined_text'] = data_df['ctxs'].apply(combine_texts)
+    
+    # Set prompt template for RAG with few-shot examples
+    print('Formatting prompts...')
+    prompts = format_rag_prompt(data_df)
+    
+    print('Generating responses using vllm...')
+    # OpenAI Compatible Server
+    client = AsyncOpenAI(
+        api_key=os.environ.get("OPENAI_API_KEY"),
+        base_url=args.vllm_url,
+    )
+    results = vllm_inference(
+        client=client,
+        prompts=prompts,
+        model=args.model_name,
+        temperature=args.temperature,
+        max_tokens=args.max_tokens,
+        top_p=args.top_p,
+        requests_per_minute=args.requests_per_minute,
+        num_responses_per_prompt=args.num_responses_per_prompt,
+    )
+    
+    # Store the generation results
+    print('Storing the generation results...')
+    data_df['generation'] = results
+    os.makedirs(result_path, exist_ok=True)
+    data_df.to_json(f'{result_path}/{args.modified}_generation.jsonl', orient='records', lines=True)
+    print(f'Generation results are stored in {result_path}/{args.modified}_generation.jsonl')
+    
+
+if __name__ == '__main__':
+    main()
