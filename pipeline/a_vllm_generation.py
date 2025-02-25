@@ -116,10 +116,6 @@ def main():
     print(f'Loading queries and retrieval results from {file_name}')
     data_df = pd.read_json(file_name, lines=True)
     
-    
-    data_df = data_df.iloc[:10].copy()
-    
-    
     # Generate context from several retrieval documents
     print('Creating combined retrieval context...')
     data_df['ctxs'] = data_df['ctxs'].apply(lambda x: x[:args.n_docs])
