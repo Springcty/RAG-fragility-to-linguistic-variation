@@ -4,19 +4,19 @@ import pandas as pd
 
 from vllm import LLM, SamplingParams
 from openai import AsyncOpenAI
-from utils.few_shot_prompting import readability_2_shot, formality_2_shot
+from utils.few_shot_prompting import few_2shot_examples
 from utils.vllm_inference import vllm_inference
 
 
 parser = argparse.ArgumentParser(description='RAG pipeline')
-parser.add_argument('--data_path', type=str, default='/data/group_data/maartens_lab_miis24/QL_result',
+parser.add_argument('--data_path', type=str, default='/data/group_data/maartens_lab_miis24/QL_result/gpt-4o-mini',
                     help='The root path to load the retrieval results')
 parser.add_argument('--retrieval', type=str, default='ModernBERT', 
                     help='The retrieval method from ["ModernBERT", "contriever"]')
-parser.add_argument('--dataset', type=str, default='popqa',
+parser.add_argument('--dataset', type=str, default='ms_marco',
                     help='Name of the QA dataset from ["popqa", "entity_questions" "ms_marco" "natural_questions"]')
-parser.add_argument('--linguistics', type=str, default='politeness',
-                    help='The linguistic properties of the query to be modified, from["readability", "formality", "politeness" "grammatical_correctness"]')
+parser.add_argument('--linguistics', type=str, default='readability',
+                    help='The linguistic properties of the query to be modified, from["readability" "back_translated" "edited_query_char" "formality" "politeness"]')
 parser.add_argument('--modified', type=str, default='original',
                     help='The type of query to be modified, from ["original", "modified"]')
 
@@ -32,7 +32,7 @@ parser.add_argument('--model_name', type=str, default='meta-llama/Llama-3.1-8B-I
                     help='LLM used for generation')
 parser.add_argument('--temperature', type=float, default=0.5,
                     help='The temperature for generation')
-parser.add_argument('--max_tokens', type=int, default=64,
+parser.add_argument('--max_tokens', type=int, default=128, # 64 for gpt-3.5-turbo rewriting, 128 for gpt-4o-mini
                     help='The maximum tokens for generation')
 parser.add_argument('--top_p', type=float, default=0.90,
                     help='The top p for generation')
@@ -43,6 +43,7 @@ parser.add_argument('--num_responses_per_prompt', type=int, default=1,
 
 
 args = parser.parse_args()
+print(args)
 
 
 def combine_texts(ctxs_list):
@@ -68,7 +69,7 @@ Now, it's your turn to answer the question below. The answer should contain ONLY
         lambda row: (
             system_prompt_template.format(
                 contexts=row['combined_text'],
-                few_shot_examples=readability_2_shot if args.linguistics == 'readability' else formality_2_shot,
+                few_shot_examples=few_2shot_examples[args.dataset][args.linguistics],
             ),
             user_prompt_template.format(question=row['question'])
         ),
@@ -88,7 +89,7 @@ Answer:'''
     # Generate prompt list for vLLM generation
     data_df['prompt'] = data_df.apply(
         lambda row: prompt_template.format(
-            few_shot_examples=readability_2_shot if args.linguistics == 'readability' else formality_2_shot,
+            few_shot_examples=few_2shot_examples[args.dataset][args.linguistics],
             question=row['question'],
         ),
         axis=1,
@@ -115,6 +116,9 @@ def main():
     file_name = os.path.join(data_path, f'{args.modified}_retrieval.jsonl')
     print(f'Loading queries and retrieval results from {file_name}')
     data_df = pd.read_json(file_name, lines=True)
+    
+    data_df = data_df.sample(100)
+    
     
     # Generate context from several retrieval documents
     print('Creating combined retrieval context...')
