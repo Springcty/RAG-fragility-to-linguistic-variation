@@ -1,6 +1,38 @@
 import pandas as pd
 from langchain_core.prompts import ChatPromptTemplate, FewShotChatMessagePromptTemplate
 
+
+few_2shot_examples = {
+    'popqa': {
+        'readability': 'Question: What genre is Golden?\nAnswer: rock music\n\nQuestion: In which specific genre does the work titled "Golden" find its classification?\nAnswer: rock music',
+        'politeness': 'Question: What genre is Golden?\nAnswer: rock music\n\nQuestion: Would you be so kind as to share with me what genre Golden falls under?\nAnswer: rock music',
+        'formality': 'Question: What genre is Golden?\nAnswer: rock music\n\nQuestion: Hey, so like, do you know what genre Golden is?\nAnswer: rock music',
+        'back_translated': 'Question: What genre is Golden?\nAnswer: rock music\n\nQuestion: What genre of Golden?\nAnswer: rock music',
+        'edited_query_char': 'Question: What genre is Golden?\nAnswer: rock music\n\nQuestion: What genra is Golden?\nAnswer: rock music',
+    },
+    'entity_questions': {
+        'readability': 'Question: Where was Michael Jack born?\nAnswer: Folkestone\n\nQuestion: In what geographical locale did the individual known as Michael Jackson enter into existence?\nAnswer: Folkestone',
+        'politeness': 'Question: Where was Michael Jack born?\nAnswer: Folkestone\n\nQuestion: Would you be so kind as to share the birthplace of Michael Jack?\nAnswer: Folkestone',
+        'formality': 'Question: Where was Michael Jack born?\nAnswer: Folkestone\n\nQuestion: Hey, so like, do you know where Michael Jack was born?\nAnswer: Folkestone',
+        'back_translated': 'Question: Where was Michael Jack born?\nAnswer: Folkestone\n\nQuestion: Where was Michael Jacques born?\nAnswer: Folkestone',
+        'edited_query_char': 'Question: Where was Michael Jack born?\nAnswer: Folkestone\n\nQuestion: Where wos Michael Jack born?\nAnswer: Folkestone',
+    },
+    'ms_marco': {
+        'readability': 'Question: how long can chicken stay good in the fridge\nAnswer: 1 to 2 days\n\nQuestion: What is the time span within which chicken can sustain its quality for consumption when preserved in a refrigerated setting?\nAnswer: 1 to 2 days',
+        'politeness': 'Question: how long can chicken stay good in the fridge\nAnswer: 1 to 2 days\n\nQuestion: Would you be so kind as to share how long chicken remains fresh in the refrigerator?\nAnswer: 1 to 2 days',
+        'formality': 'Question: how long can chicken stay good in the fridge\nAnswer: 1 to 2 days\n\nQuestion: Hey, so like, do you know how long chicken can last in the fridge?\nAnswer: 1 to 2 days',
+        'back_translated': 'Question: how long can chicken stay good in the fridge\nAnswer: 1 to 2 days\n\nQuestion: How long will chicken stay fresh in the refrigerator\nAnswer: 1 to 2 days',
+        'edited_query_char': 'Question: how long can chicken stay good in the fridge\nAnswer: 1 to 2 days\n\nQuestion: how leng can chickon stay good in the fridge\nAnswer: 1 to 2 days',
+    },
+    'natural_questions': {
+        'readability': 'Question: how many pieces in a terry\'s chocolate orange\nAnswer: six\n\nQuestion: What is the total quantity of individual segments contained within a Terry\'s chocolate orange confectionery item?\nAnswer: six',
+        'politeness': 'Question: how many pieces in a terry\'s chocolate orange\nAnswer: six\n\nQuestion: Would you be so kind as to share the number of segments typically found in a Terry\'s chocolate orange?\nAnswer: six',
+        'formality': 'Question: how many pieces in a terry\'s chocolate orange\nAnswer: six\n\nQuestion: Hey, so like, do you know a terry\'s chocolate orange contains how many pieces\nAnswer: six',
+        'back_translated': 'Question: how many pieces in a terry\'s chocolate orange\nAnswer: six\n\nQuestion: How many pieces of Terry\'s Chocolate Orange\nAnswer: six',
+        'edited_query_char': 'Question: how many pieces in a terry\'s chocolate orange\nAnswer: six\n\nQuestion: how meny pieces in a tarry\'s chocolate orange\nAnswer: six',
+    },
+}
+
 readability_2_shot = '''
 Question: What is Milton Bowen's occupation?
 Answer: Teacher.
@@ -17,112 +49,6 @@ Question: Hey, so like, where was Reham born, like which city?
 Answer: Pittsburgh.
 '''
 
-few_shot_examples = {
-    'PopQA_Readability': [
-        {
-            "input": "What is Milton Bowen's occupation?",
-            "output": "Teacher."
-        },{
-            "input": "In which urban locality did the individual known as Reham first emerge into existence?",
-            "output": "Pittsburgh."
-        },{
-            "input": "What genre is Alana?",
-            "output": "Music."
-        },{
-            "input": "Who might be identified as the progenitor of the individual historically recognized as Jacobs?",
-            "output": "Esa."
-        },{
-            "input": "In what country is Skyla?",
-            "output": "Chase."
-        },{
-            "input": "Inquiring into the identity of the individual or entity responsible for the production of the cinematic work entitled 'Demoes'?",
-            "output": "Meta."
-        },{
-            "input": "Who was the director of Ahmed?",
-            "output": "Barrett."
-        },{
-            "input": "To which geopolitical entity does Luc serve as the administrative capital?",
-            "output": "Caervantes."
-        },{
-            "input": "Who was the screenwriter for Randy?",
-            "output": "Buckley."
-        },{
-            "input": "Inquiring into the identity of the individual responsible for the composition of the musical piece commonly referred to as 'Ava'?",
-            "output": "Holder."
-        },{
-            "input": "What color is Leonie?",
-            "output": "Yoder."
-        },{
-            "input": "What specific theological belief system is adhered to by individuals identifying as Jose?",
-            "output": "Wise."
-        },{
-            "input": "What sport does Arran play?",
-            "output": "Gutierrez."
-        },{
-            "input": "In the realm of literary authorship, which individual can be ascribed the creative genesis of the work entitled Damian?",
-            "output": "Singh."
-        },{
-            "input": "Who is the mother of Jasmine?",
-            "output": "Weeks."
-        },{
-            "input": "What singular urban jurisdiction can be designated as the principal administrative center of the geographic region known as Axel?",
-            "output": "Petty."
-        },
-    ],
-    'PopQA_Formality': [
-        {
-            "input": "What is Milton Bowen's occupation?",
-            "output": "Teacher."
-        },{
-            "input": "Hey, so like, where was Reham born, like which city?",
-            "output": "Pittsburgh."
-        },{
-            "input": "What genre is Alana?",
-            "output": "Music."
-        },{
-            "input": "Who's Jacob's dad?",
-            "output": "Esa."
-        },{
-            "input": "In what country is Skyla?",
-            "output": "Chase."
-        },{
-            "input": "Yo, who was the dude that produced Demoes?",
-            "output": "Meta."
-        },{
-            "input": "Who was the director of Ahmed?",
-            "output": "Barrett."
-        },{
-            "input": "So, like, what's Kueaf the capital of, anyway?",
-            "output": "Caervantes."
-        },{
-            "input": "Who was the screenwriter for Randy?",
-            "output": "Buckley."
-        },{
-            "input": "Yo, who made Ava?",
-            "output": "Holder."
-        },{
-            "input": "What color is Leonie?",
-            "output": "Yoder."
-        },{
-            "input": "So, like, what was Jose's religion, ya know?",
-            "output": "Wise."
-        },{
-            "input": "What sport does Arran play?",
-            "output": "Gutierrez."
-        },{
-            "input": "Yo, who wrote Damian?",
-            "output": "Singh."
-        },{
-            "input": "Who is the mother of Jasmine?",
-            "output": "Weeks."
-        },{
-            "input": "Hey, what's the capital of Axel, ya know?",
-            "output": "Petty."
-        },
-    ],
-    'Entity_Readability': ...,
-    'Entity_Formality': ...,
-}
 
 def create_few_shot_examples(args):
     few_shot_template = ChatPromptTemplate([
@@ -131,7 +57,7 @@ def create_few_shot_examples(args):
     ])
     few_shot_prompt = FewShotChatMessagePromptTemplate(
         example_prompt=few_shot_template,
-        examples=few_shot_examples[f'{args.dataset}_{args.property}'],
+        examples=few_2shot_examples[args.dataset][args.property],
     )
     return few_shot_prompt
 
