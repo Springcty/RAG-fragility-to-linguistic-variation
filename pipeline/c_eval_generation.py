@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser(description='RAG pipeline')
 parser.add_argument('--result_path', type=str, default='/data/group_data/maartens_lab_miis24/QL_result',
                     help='The path to save the retrievel and generation results')
 parser.add_argument('--retrieval', type=str, default='ModernBERT', 
-                    help='The retrieval method from ["ModernBERT", "contriever"]')
+                    help='The retrieval method from ["ModernBERT", "Contriever", "none_retrieval"]')
 parser.add_argument('--model_name', type=str, default='meta-llama/Llama-3.1-8B-Instruct',
                     help='LLM used for generation')
 parser.add_argument('--dataset', type=str, default='popqa',
@@ -97,9 +97,8 @@ def transform_answers(cell):
     if isinstance(cell, list):
         return cell
     # Step 1: Convert the outer string to a list using ast.literal_eval
-    list_as_string = ast.literal_eval(cell)[0]
-    # Step 2: Parse the JSON string to a Python list
-    return json.loads(list_as_string)
+    list_as_string = ast.literal_eval(cell)
+    return list_as_string
 
 
 def eval_generation(df, save_path):
@@ -109,7 +108,6 @@ def eval_generation(df, save_path):
     predictions = df['generation'].tolist()
     # Truncate the generation and treat the first paragraph (split with ‘\n\n’) as the generated answer
     # predictions = [output['outputs'][0]['text'].split('\n')[0] for output in df['generation']]
-
     
     # Parallel exact match
     print('Parallel exact match evaluation...')
@@ -178,6 +176,9 @@ def eval_quantiles_popularity(df, save_path):
 def main():
     # /data/group_data/maartens_lab_miis24/QL_result/entity_questions/politeness/ModernBERT/Llama-3.1-8B-Instruct/modified_generation.jsonl
     data_path = os.path.join(args.result_path, args.dataset, args.linguistics, args.retrieval, args.model_name.split('/')[1])
+    if not os.path.exists(data_path):
+        data_path = os.path.join(args.result_path, args.model_name.split('/')[1], args.dataset, args.linguistics)
+    
     save_path = f'{data_path}/{args.modified}_generation_score.csv'
     
     print('Loading the generation data from:', f'{data_path}/{args.modified}_generation.jsonl')

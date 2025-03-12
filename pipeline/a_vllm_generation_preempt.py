@@ -77,6 +77,25 @@ Now, it's your turn to answer the question below. The answer should contain ONLY
     )
     return data_df['prompt'].tolist()
 
+# Set prompt template for non-retrieval generation, with few-shot examples
+def format_non_retrieval_prompt(data_df):
+    prompt_template = '''You are a professional question-answer task assistant. Below are examples of questions and answers:
+{few_shot_examples}
+Now, it's your turn to answer the question below. The answer should contain ONLY one sentence and DO NOT explain reasons.
+
+Question: {question}
+Answer:'''
+    
+    # Generate prompt list for vLLM generation
+    data_df['prompt'] = data_df.apply(
+        lambda row: prompt_template.format(
+            few_shot_examples=few_2shot_examples[args.dataset][args.linguistics],
+            question=row['question'],
+        ),
+        axis=1,
+    )
+    return data_df['prompt'].tolist()
+
 
 def offline_generation(prompts):
     sampling_params = SamplingParams(
@@ -93,47 +112,48 @@ def main():
     data_path = os.path.join(args.data_path, args.dataset, args.linguistics, args.retrieval)
     result_path = os.path.join(data_path, args.model_name.split('/')[1])
     
-    if os.path.exists(f'{result_path}/{args.modified}_generation.jsonl'):
-        print(f'Generation results already exist in {result_path}/{args.modified}_generation.jsonl')
-        return
-    
     # Load the dataset with retrievals
     file_name = os.path.join(data_path, f'{args.modified}_retrieval.jsonl')
     print(f'Loading queries and retrieval results from {file_name}')
     data_df = pd.read_json(file_name, lines=True)
-
-    # Generate context from several retrieval documents
-    print('Creating combined retrieval context...')
-    data_df['ctxs'] = data_df['ctxs'].apply(lambda x: x[:args.n_docs])
-    data_df['combined_text'] = data_df['ctxs'].apply(combine_texts)
     
-    # Set prompt template for RAG with few-shot examples
-    print('Formatting prompts...')
-    prompts = format_rag_prompt(data_df)
-    
-    print('Generating responses using vllm...')
     # OpenAI Compatible Server
     client = AsyncOpenAI(
         api_key=os.environ.get("OPENAI_API_KEY"),
         base_url=args.vllm_url,
     )
-    results = vllm_inference(
-        client=client,
-        prompts=prompts,
-        model=args.model_name,
-        temperature=args.temperature,
-        max_tokens=args.max_tokens,
-        top_p=args.top_p,
-        requests_per_minute=args.requests_per_minute,
-        num_responses_per_prompt=args.num_responses_per_prompt,
-    )
     
-    # Store the generation results
-    print('Storing the generation results...')
-    data_df['generation'] = results
-    os.makedirs(result_path, exist_ok=True)
-    data_df.to_json(f'{result_path}/{args.modified}_generation.jsonl', orient='records', lines=True)
-    print(f'Generation results are stored in {result_path}/{args.modified}_generation.jsonl')
+    result_df = pd.DataFrame()
+    for i in range(0, len(data_df), 1000):
+        print(f'Processing {i} to {i+1000}...')
+        data_df_batch = data_df.iloc[i:i+1000].copy()
+        
+        print('Creating combined retrieval context...')
+        data_df_batch['ctxs'] = data_df_batch['ctxs'].apply(lambda x: x[:args.n_docs])
+        data_df_batch['combined_text'] = data_df_batch['ctxs'].apply(combine_texts)
+        
+        print('Formatting prompts...')
+        prompts = format_rag_prompt(data_df_batch)
+        
+        print('Generating responses using vllm...')
+        results = vllm_inference(
+            client=client,
+            prompts=prompts,
+            model=args.model_name,
+            temperature=args.temperature,
+            max_tokens=args.max_tokens,
+            top_p=args.top_p,
+            requests_per_minute=args.requests_per_minute,
+            num_responses_per_prompt=args.num_responses_per_prompt,
+        )
+        
+        print('Storing the generation results...')
+        data_df_batch['generation'] = results
+        result_df = pd.concat([result_df, data_df_batch])
+        
+        os.makedirs(result_path, exist_ok=True)
+        result_df.to_json(f'{result_path}/{args.modified}_generation.jsonl', orient='records', lines=True)
+        print(f'Generation results are stored in {result_path}/{args.modified}_generation.jsonl')
     
 
 if __name__ == '__main__':
