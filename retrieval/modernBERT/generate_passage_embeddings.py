@@ -43,17 +43,6 @@ def load_passages(path):
     elif 'Tevatron/msmarco-passage-corpus' in path:
         ds = load_dataset("Tevatron/msmarco-passage-corpus")
         passages = ds['train'].rename_column('docid', 'id').to_list()
-        
-    elif 'enwiki-20171001-pages-meta-current-withlinks-abstracts' in path:
-        # {path}/AA/wiki_00.bz2
-        for root, dirs, files in os.walk(path):
-            for file in files:
-                if file.endswith('.bz2'):
-                    with bz2.open(os.path.join(root, file), 'rt') as f:
-                        for line in f:
-                            line = json.loads(line)
-                            ex = {'id': line['id'], 'title': line['title'], 'text': ''.join(line['text'])}
-                            passages.append(ex)
     
     print(f"Loaded {len(passages)} passages.")
     return passages
@@ -135,9 +124,6 @@ def main(args):
     elif args.corpus == 'wikipedia':
         args.passages_path = os.path.join(args.passages_path, 'psgs_w100.tsv')
         args.output_dir = os.path.join(args.output_dir, 'wikipedia_embeddings')
-    elif args.corpus == 'fullwiki':
-        args.passages_path = os.path.join(args.passages_path, 'enwiki-20171001-pages-meta-current-withlinks-abstracts')
-        args.output_dir == os.path.join(args.output_dir, 'fullwiki_embeddings')
     
     passages = load_passages(args.passages_path)
     shard_size = len(passages) // args.num_shards
@@ -167,8 +153,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--passages_path", type=str,
-                        default='/data/user_data/tianyuca/QL_dataset', help="Path to passages (.tsv file)")
-    parser.add_argument("--output_dir", type=str, default="/data/user_data/tianyuca/QL_dataset", help="dir path to save embeddings")
+                        default='/data/QL_dataset', help="Path to passages (.tsv file)")
+    parser.add_argument("--output_dir", type=str, default="/data/QL_dataset", help="dir path to save embeddings")
     parser.add_argument("--corpus", type=str, help="corpus name")
     
     parser.add_argument("--shard_id", type=int, help="Id of the current shard")

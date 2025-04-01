@@ -9,9 +9,9 @@ from sentence_transformers import CrossEncoder, util
 from passage_retrieval import validate
 
 parser = argparse.ArgumentParser(description='RAG pipeline')
-parser.add_argument('--data_path', type=str, default='/data/group_data/maartens_lab_miis24/QL_result/gpt-4o-mini',
+parser.add_argument('--data_path', type=str, default='/data/QL_result/gpt-4o-mini',
                     help='The root path to load the retrieval results')
-parser.add_argument('--save_path', type=str, default='/data/group_data/maartens_lab_miis24/Reranking',
+parser.add_argument('--save_path', type=str, default='/data/Reranking',
                     help='The root path to save the reranking results')
 parser.add_argument('--retrieval', type=str, default='ModernBERT', 
                     help='The retrieval method from ["ModernBERT", "contriever"]')

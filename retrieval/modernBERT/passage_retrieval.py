@@ -182,16 +182,6 @@ def load_passages(path):
         logging.info(f"Loading passages from: Tevatron/msmarco-passage-corpus")
         ds = load_dataset('Tevatron/msmarco-passage-corpus')
         passages = ds['train'].rename_column('docid', 'id').to_list()
-    elif 'enwiki-20171001-pages-meta-current-withlinks-abstracts' in path:
-        # {path}/AA/wiki_00.bz2
-        for root, dirs, files in os.walk(path):
-            for file in files:
-                if file.endswith('.bz2'):
-                    with bz2.open(os.path.join(root, file), 'rt') as f:
-                        for line in f:
-                            line = json.loads(line)
-                            ex = {'id': line['id'], 'title': line['title'], 'text': ''.join(line['text'])}
-                            passages.append(ex)
     
     print(f"Loaded {len(passages)} passages.")
     return passages
@@ -206,17 +196,7 @@ def main(args):
         passages_path = os.path.join(args.passages_path, 'ms_marco')
         
         data_path = os.path.join(args.data_path, args.rewriting_model, args.dataset, args.linguistic, f'{args.modified}_queries.jsonl')
-        output_path = os.path.join(args.output_dir, args.rewriting_model, args.dataset, args.linguistic, "ModernBERT", f'{args.modified}_retrieval.jsonl')
-    
-    elif args.dataset == 'hotpotqa':
-        log_filepath = os.path.join(args.output_dir, args.linguistic, f"{args.modified}_retrieval.log")
-        
-        passages_embeddings_path = os.path.join(args.passages_path, 'passages_*')
-        passages_path = os.path.join(args.passages_path, 'enwiki-20171001-pages-meta-current-withlinks-abstracts')
-        
-        data_path = os.path.join(args.data_path, args.linguistic, f'{args.modified}_queries.jsonl')
-        output_path = os.path.join(args.output_dir, args.linguistic, f'{args.modified}_retrieval.jsonl')
-    
+        output_path = os.path.join(args.output_dir, args.rewriting_model, args.dataset, args.linguistic, "ModernBERT", f'{args.modified}_retrieval.jsonl')    
     else:
         log_filepath = os.path.join(args.output_dir, args.rewriting_model, args.dataset, args.linguistic, "ModernBERT", f"{args.modified}_retrieval.log")
         
@@ -288,30 +268,17 @@ def main(args):
             fout.write("\n")
     logging.info(f"Saved results to {output_path}")
 
-'''
-data_path
-dataset
-linguistic
-modified
-passage_path
-passage_embeddings_path
 
-output_path
-'''
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    '''
-    python passage_retrieval.py --dataset popqa --linguistic readability --modified original --n_docs 5 --lowercase --normalize_text --save_or_load_index \
-    --nlist 16384 --m 64 --nbits 8 
-    '''
     # General experimental args
     parser.add_argument("--passages_path", type=str, 
-                        default='/data/user_data/tianyuca/QL_dataset', help="Path to passages (.tsv file)")
+                        default='/data/QL_dataset', help="Path to passages (.tsv file)")
     parser.add_argument("--output_dir", type=str, 
-                        default='/data/group_data/maartens_lab_miis24/QL_result', help="Results are written to outputdir with data suffix")
+                        default='/data/QL_result', help="Results are written to outputdir with data suffix")
     parser.add_argument("--data_path", type=str,
-                        default='/data/group_data/maartens_lab_miis24/QL_dataset', help='path to QA dataset')
+                        default='/data/QL_dataset', help='path to QA dataset')
     parser.add_argument("--rewriting_model", type=str,
                         default='gpt-4o-mini', help='model used to generate modified queries')
     parser.add_argument('--dataset', type=str,
@@ -344,8 +311,6 @@ if __name__ == "__main__":
                         default=1000000, help="Batch size of the number of passages indexed")
     parser.add_argument("--embedding_dim", type=int, 
                         default=768, help='embedding_dim = all_embeddings.shape[1]')
-    # parser.add_argument('--nlist', type=int, default=16384,
-    #                     help='number of centroid clusters')
     parser.add_argument("--m", type=int,
                         default=64, help="Number of subquantizer used for vector quantization, if 0 flat index is used",)
     parser.add_argument("--nbits", type=int, default=8, help="Number of bits per subquantizer")
