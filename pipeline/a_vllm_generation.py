@@ -13,9 +13,9 @@ parser.add_argument('--data_path', type=str, default='/data/group_data/maartens_
                     help='The root path to load the retrieval results')
 parser.add_argument('--retrieval', type=str, default='ModernBERT', 
                     help='The retrieval method from ["ModernBERT", "contriever"]')
-parser.add_argument('--dataset', type=str, default='ms_marco',
+parser.add_argument('--dataset', type=str, default='popqa',
                     help='Name of the QA dataset from ["popqa", "entity_questions" "ms_marco" "natural_questions"]')
-parser.add_argument('--linguistics', type=str, default='readability',
+parser.add_argument('--linguistics', type=str, default='formality',
                     help='The linguistic properties of the query to be modified, from["readability" "back_translated" "edited_query_char" "formality" "politeness"]')
 parser.add_argument('--modified', type=str, default='original',
                     help='The type of query to be modified, from ["original", "modified"]')

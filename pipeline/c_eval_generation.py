@@ -15,7 +15,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 parser = argparse.ArgumentParser(description='RAG pipeline')
-parser.add_argument('--result_path', type=str, default='/data/group_data/maartens_lab_miis24/QL_result',
+parser.add_argument('--result_path', type=str, default='/data/group_data/maartens_lab_miis24/QL_result/gpt-4o-mini',
                     help='The path to save the retrievel and generation results')
 parser.add_argument('--retrieval', type=str, default='ModernBERT', 
                     help='The retrieval method from ["ModernBERT", "Contriever", "none_retrieval"]')
@@ -23,12 +23,13 @@ parser.add_argument('--model_name', type=str, default='meta-llama/Llama-3.1-8B-I
                     help='LLM used for generation')
 parser.add_argument('--dataset', type=str, default='popqa',
                     help='Name of the QA dataset from ["popqa", "entity"]')
-parser.add_argument('--linguistics', type=str, default='readability',
+parser.add_argument('--linguistics', type=str, default='formality',
                     help='The linguistic properties of the query to be modified')
 parser.add_argument('--modified', type=str, default='original',
                     help='The type of query to be modified, from ["original", "modified"]')
 
 args = parser.parse_args()
+print(args)
 
 
 def normalize_answer(s):
@@ -174,15 +175,22 @@ def eval_quantiles_popularity(df, save_path):
 
 
 def main():
-    # /data/group_data/maartens_lab_miis24/QL_result/entity_questions/politeness/ModernBERT/Llama-3.1-8B-Instruct/modified_generation.jsonl
+    # /data/group_data/maartens_lab_miis24/QL_result/gpt-4o-mini/entity_questions/politeness/ModernBERT/Llama-3.1-8B-Instruct/modified_generation.jsonl
     data_path = os.path.join(args.result_path, args.dataset, args.linguistics, args.retrieval, args.model_name.split('/')[1])
-    if not os.path.exists(data_path):
-        data_path = os.path.join(args.result_path, args.model_name.split('/')[1], args.dataset, args.linguistics)
-    
     save_path = f'{data_path}/{args.modified}_generation_score.csv'
+    
+    if os.path.exists(save_path):
+        print(f'The {save_path} evaluation file already exists!')
+        return
     
     print('Loading the generation data from:', f'{data_path}/{args.modified}_generation.jsonl')
     df = pd.read_json(f'{data_path}/{args.modified}_generation.jsonl', orient='records', lines=True)
+    
+    # # HotPotQA evaluation
+    # root_dir = '/data/group_data/maartens_lab_miis24/MultiHop'
+    # data_path = os.path.join(root_dir, args.linguistics, f'{args.modified}_generation_qsampled.jsonl')
+    # save_path = f'{root_dir}/{args.linguistics}/{args.modified}_generation_qsampled_score.csv'
+    # df = pd.read_json(data_path, orient='records', lines=True)
     
     print('Begin evaluation...')
     eval_generation(df, save_path)

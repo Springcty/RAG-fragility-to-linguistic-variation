@@ -152,6 +152,15 @@ def load_natural_questions(split: str):
     return df
 
 
+# HotpotQA
+def load_hotpotqa():
+    print('Loading HotpotQA dataset...')
+    data_path = '/data/group_data/maartens_lab_miis24/MultiHop/hotpot_qa/hotpot_dev_distractor_v1.json'
+    df_full = pd.read_json(data_path)
+    df = df_full[['_id', 'question', 'answer']]
+    return df
+
+
 # Load dataset
 if args.dataset == 'popqa':
     df = load_popqa()
@@ -161,7 +170,9 @@ elif args.dataset == 'ms_marco':
     df = load_ms_marco(split=args.split)
 elif args.dataset == 'natural_questions':
     df = load_natural_questions(split=args.split)
-    
+elif args.dataset == 'hotpotqa':
+    df = load_hotpotqa()
+
 
 # filter out questions with politeness_score < 0.5 and sort by politeness_score (ascending)
 print('Filtering out questions with politeness_score < 0.5')
@@ -172,7 +183,8 @@ df = df[df['politeness_score'] < 0.5]
 df = df.sort_values(by='politeness_score', ascending=True)
 
 # Sample 7500 questions
-df_sampled = df.iloc[7000:9000].copy()
+# df_sampled = df.iloc[:7500].copy()
+df_sampled = df[:7000].copy()
 
 # Load prompts
 prompts = {
@@ -246,7 +258,7 @@ for p in ['p1', 'p2', 'p3']:
     df_sampled[f'{p}_sbert_similarity'] = df_sampled.apply(lambda x: compute_sbert_similarity(x['question'], x[f'{p}_response']), axis=1)
     
     df_sampled_p_0 = df_sampled[df_sampled[f'{p}_politeness_score'] > 0.5]
-    df_sampled_p_1 = df_sampled[(df_sampled[f'{p}_sbert_similarity'] > 0.7)]
+    df_sampled_p_1 = df_sampled[df_sampled[f'{p}_sbert_similarity'] > 0.7]
     df_sampled_p_2 = df_sampled[(df_sampled[f'{p}_politeness_score'] > 0.5) & (df_sampled[f'{p}_sbert_similarity'] > 0.7)]
     print(f'Prompt {p}:', len(df_sampled_p_0), len(df_sampled_p_1), len(df_sampled_p_2))
 
@@ -307,7 +319,10 @@ print('Final Sample Size:', len(df_sampled_final))
 
 # Save the final sampled dataset
 print('Saving politeness_rewriting.jsonl ...')
-file_path = os.path.join(args.root_path, args.dataset, args.linguistics, f'politeness_rewriting_{args.split}_7000-9000.jsonl')
+if args.dataset == 'hotpotqa':
+    file_path = '/data/group_data/maartens_lab_miis24/MultiHop/hotpot_qa/politeness_rewriting_7000.jsonl'
+else:
+    file_path = os.path.join(args.root_path, args.dataset, args.linguistics, f'politeness_rewriting_{args.split}_7000-9000.jsonl')
 os.makedirs(os.path.dirname(file_path), exist_ok=True)
 df_sampled_final.to_json(file_path, orient='records', lines=True)
 print('Done!')

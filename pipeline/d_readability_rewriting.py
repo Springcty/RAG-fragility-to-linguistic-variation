@@ -20,8 +20,8 @@ parser.add_argument('--root_path', type=str,
                     default='/data/group_data/maartens_lab_miis24/QL_dataset') 
 parser.add_argument('--dataset', type=str, default='ms_marco') # ['popqa', 'entity_questions', 'ms_marco', 'natural_questions']
 parser.add_argument('--split', type=str, default='validation') # ['validation', 'test']
-parser.add_argument('--linguistics', type=str, default='readability') # ['readability', 'politeness']
-parser.add_argument('--model', type=str, default='gpt-3.5-turbo') # ['gpt-3.5-turbo', 'gpt-4o-mini']
+parser.add_argument('--linguistics', type=str, default='readability')
+parser.add_argument('--model', type=str, default='gpt-4o-mini') # ['gpt-3.5-turbo', 'gpt-4o-mini']
 args = parser.parse_args()
 print(args)
 '''
@@ -31,11 +31,6 @@ python pipeline/d_readability_rewriting.py \
     --linguistics readability \
     --model gpt-4o-mini
 '''
-
-if args.model == 'gpt-3.5-turbo':
-    args.root_path = args.root_path.replace('QL_dataset', 'QL_dataset_gpt-3_5')
-elif args.model == 'gpt-4o-mini':
-    args.root_path = args.root_path.replace('QL_dataset', 'QL_dataset_gpt-4o')
 
 
 # OpenAI Compatible Server
@@ -132,6 +127,15 @@ def load_natural_questions(split: str):
     return df
 
 
+# HotpotQA
+def load_hotpotqa():
+    print('Loading HotpotQA dataset...')
+    data_path = '/data/group_data/maartens_lab_miis24/MultiHop/hotpot_qa/hotpot_dev_distractor_v1.json'
+    df_full = pd.read_json(data_path)
+    df = df_full[['_id', 'question', 'answer']]
+    return df
+
+
 # Load dataset
 if args.dataset == 'popqa':
     df = load_popqa()
@@ -141,6 +145,8 @@ elif args.dataset == 'ms_marco':
     df = load_ms_marco(split=args.split)
 elif args.dataset == 'natural_questions':
     df = load_natural_questions(split=args.split)
+elif args.dataset == 'hotpotqa':
+    df = load_hotpotqa()
     
 
 print('Filtering out questions with low readability score...')    
@@ -148,11 +154,7 @@ df['readability_score'] = df['question'].apply(lambda x: flesch_reading_ease(x))
 df = df[df['readability_score'] > 60]
 df = df.sort_values(by='readability_score', ascending=False)
 
-
-df_v0 = pd.read_json('/data/group_data/maartens_lab_miis24/QL_dataset_gpt-4o/popqa/readability/readability_rewriting_validation_combined.jsonl', orient='records', lines=True)
-# sample from df except for the ones that are already in df_v0
-df = df[~df['id'].isin(df_v0['id'])]
-df_sampled = df.sample(n=1500, random_state=42)
+df_sampled = df[:7000].copy()
 
 prompts = {
     'p1': '''1. Task Definition:
@@ -224,7 +226,7 @@ for p in ['p1', 'p2', 'p3']:
     results = vllm_inference(
         client=client,
         prompts=df_sampled[p].tolist(),
-        model='gpt-3.5-turbo',
+        model=args.model,
         temperature=1,
         max_tokens=100,
         top_p=0.9,
@@ -265,7 +267,7 @@ for i in range(max_regen_iterations):
             new_responses = vllm_inference(
                 client=client,
                 prompts=df_fail[p].tolist(),
-                model='gpt-3.5-turbo',
+                model=args.model,
                 temperature=1,
                 max_tokens=100,
                 top_p=0.9,
@@ -296,7 +298,10 @@ print('Final Sample Size:', len(df_sampled_final))
 
 # Save the final sampled dataset
 print('Saving readability_rewriting.jsonl ...')
-file_path = os.path.join(args.root_path, args.dataset, args.linguistics, f'readability_rewriting_{args.split}_random2.jsonl')
+if args.dataset == 'hotpotqa':
+    file_path = f'/data/group_data/maartens_lab_miis24/MultiHop/{args.linguistics}/readability_rewriting_3650.jsonl'
+else:
+    file_path = os.path.join(args.root_path, args.dataset, args.linguistics, f'readability_rewriting_{args.split}.jsonl')
 os.makedirs(os.path.dirname(file_path), exist_ok=True)
 df_sampled_final.to_json(file_path, orient='records', lines=True)
 print('Done!')
