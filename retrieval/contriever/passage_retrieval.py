@@ -106,13 +106,7 @@ def validate(data, workers_num):
 
 
 def add_passages(data, passages, top_passages_and_scores):
-    # add passages to original data
     merged_data = []
-    print(len(data))
-    print(len(top_passages_and_scores))
-    print(data)
-    print(top_passages_and_scores)
-    # assert len(data) == len(top_passages_and_scores)
     for i, d in enumerate(data):
         results_and_scores = top_passages_and_scores[i]
         docs = [passages[doc_id] for doc_id in results_and_scores[0]]
@@ -130,7 +124,6 @@ def add_passages(data, passages, top_passages_and_scores):
 
 
 def add_hasanswer(data, hasanswer):
-    # add hasanswer to data
     for i, ex in enumerate(data):
         for k, d in enumerate(ex["ctxs"]):
             d["hasanswer"] = hasanswer[i][k]
@@ -160,7 +153,6 @@ def main(args):
 
     index = src.index.Indexer(args.projection_size, args.n_subquantizers, args.n_bits)
 
-    # index all passages
     input_paths = glob.glob(args.passages_embeddings)
     input_paths = sorted(input_paths)
     embeddings_dir = os.path.dirname(input_paths[0])
@@ -175,7 +167,6 @@ def main(args):
         if args.save_or_load_index:
             index.serialize(embeddings_dir)
 
-    # load passages
     passages = src.data.load_passages(args.passages)
     passage_id_map = {x["id"]: x for x in passages}
 
@@ -188,7 +179,6 @@ def main(args):
         queries = [ex["question"] for ex in data]
         questions_embedding = embed_queries(args, queries, model, tokenizer)
 
-        # get top k results
         start_time_retrieval = time.time()
         top_ids_and_scores = index.search_knn(questions_embedding, args.n_docs)
         print(f"Search time: {time.time()-start_time_retrieval:.1f} s.")

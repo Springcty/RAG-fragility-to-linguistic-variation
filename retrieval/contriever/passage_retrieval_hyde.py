@@ -51,7 +51,6 @@ class OpenAIGenerator(Generator):
     @staticmethod
     def parse_response(response):
         to_return = []
-        print("parsing response")
         for g in response.choices:
 
             text = g.message.content
@@ -66,7 +65,6 @@ class OpenAIGenerator(Generator):
     
     def generate(self, prompt):
         get_results = False
-        print("Prompt: ", prompt)
         while not get_results:
             try:
                 print("Generating result ......... ")
@@ -129,7 +127,6 @@ def embed_hyde_queries(args, queries, model, tokenizer, generator):
                 )
                 encoded_batch = {k: v.cuda() for k, v in encoded_batch.items()}
                 output = model(**encoded_batch) 
-                print("Embedding generated")
 
                 agg_embedding = output.mean(dim=0, keepdim=True) 
                 all_embeddings.append(agg_embedding.cpu())
@@ -141,7 +138,6 @@ def embed_hyde_queries(args, queries, model, tokenizer, generator):
                 outfile.write(json.dumps(record, ensure_ascii=False) + '\n')
 
     all_embeddings = torch.cat(all_embeddings, dim=0)
-    print(f"Aggregated queries embeddings shape: {all_embeddings.size()}")
     print(f"HyDE docs written to {output_jsonl_path}")
 
     return all_embeddings.numpy()
@@ -170,7 +166,6 @@ def embed_queries(args, queries, model, tokenizer):
                 embeddings.append(output.cpu())
                 batch_question = []
     embeddings = torch.cat(embeddings, dim=0)
-    print(f"Questions embeddings shape: {embeddings.size()}")
     return embeddings.numpy()
 
 def index_encoded_data(index, embedding_files, indexing_batch_size):
@@ -203,23 +198,17 @@ def add_embeddings(index, embeddings, ids, indexing_batch_size):
 def validate(data, workers_num):
     match_stats = calculate_matches(data, workers_num)
     top_k_hits = match_stats.top_k_hits
-
-    print("Validation results: top k documents hits %s", top_k_hits)
     top_k_hits = [v / len(data) for v in top_k_hits]
     message = ""
     for k in [5, 10, 20, 100]:
         if k <= len(top_k_hits):
             message += f"R@{k}: {top_k_hits[k-1]} "
-    print(message)
+
     return match_stats.questions_doc_hits
 
 def add_passages(data, passages, top_passages_and_scores):
 
     merged_data = []
-    print(len(data))
-    print(len(top_passages_and_scores))
-    print(data)
-    print(top_passages_and_scores)
 
     for i, d in enumerate(data):
         results_and_scores = top_passages_and_scores[i]
@@ -286,15 +275,10 @@ def main(args):
     for path in data_paths:
         data = load_data(path)
         output_path = os.path.join(args.output_dir, os.path.basename(path))
-        print(data)
-        
-
         queries = [ex["question"] for ex in data]
         
         openai_api_key = os.environ.get("OPENAI_API_KEY")
-        print("OpenAI Key: ", openai_api_key)
         if openai_api_key:
-            print("Reached OPENAI Generation")
             generator = OpenAIGenerator(
                 model_name="gpt-4o-mini",
                 api_key=openai_api_key,
@@ -308,7 +292,6 @@ def main(args):
                 wait_till_success=True
             )
         else:
-            print("Didn't work")
             return -1
             generator = DummyGenerator(n=8)
         
