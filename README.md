@@ -19,7 +19,11 @@ Run rewriting experiments:
 
 Run retrieval experiment using `Contriever`:
 ```bash
-@Neel
+#Encode the wikipedia or ms marco passages using Contriever. For wikipedia, follow instructions \href{https://github.com/Springcty/RAG-fragility-to-linguistic-variation/tree/main/retrieval/#contriever#evaluation}{here}. If you would like to generate ms marco embeddings:
+sbatch retrieval/contriever/sbatch_embeddings.sh
+
+In order to run the retrieval experiments:
+sbatch retrieval/contriever/retrieval_gpt4o.sh
 ```
 
 Run retrieval experiment using `ModernBERT`:
