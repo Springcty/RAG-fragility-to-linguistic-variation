@@ -31,9 +31,7 @@ nltk.download('punkt')
 
 logging.basicConfig(level=logging.INFO)
 
-#############################################
-# FUNCTION TO LOAD DATASETS BY NAME
-#############################################
+
 def format_nq(nq_path):
     """
     Process the Natural Questions dataset and standardize columns to global requirements
@@ -72,16 +70,13 @@ def load_dataset_samples(dataset_name: str, sample_size: int = 1000, full_sampli
     else:
         raise ValueError(f"Unsupported dataset: {dataset_name}")
 
-    # Perform sampling if full_sampling is False
     if not full_sampling and sample_size < len(df):
         df = df.sample(n=sample_size, random_state=42).reset_index(drop=True)
         logging.info(f"Sampled {sample_size} items from {dataset_name}")
 
     return df
 
-#############################################
-# CHARACTER-LEVEL EDITING FUNCTIONS
-#############################################
+
 def edit_word(word, edit_probability=0.2, num_edits=1):
     if random.random() < edit_probability:
         operation = random.choice(['addition', 'substitution', 'removal'])
@@ -104,9 +99,7 @@ def edit_sentence(sentence, edit_probability=0.2, num_edits=1):
     new_tokens = [edit_word(token, edit_probability, num_edits) if token.isalpha() else token for token in tokens]
     return ' '.join(new_tokens)
 
-#############################################
-# POS-BASED EDITING FUNCTIONS
-#############################################
+
 def get_synonyms(word, pos):
     synonyms = set()
     for syn in wordnet.synsets(word):
@@ -133,34 +126,28 @@ def pos_edit(sentence, probability=0.2, error_types=("verb", "preposition", "nou
     
     return ' '.join(new_tokens)
 
-#############################################
-# BACK TRANSLATION FUNCTION
-#############################################
+
 def back_translate(text_list, source_lang="en", pivot_lang="af", model_name="opus-mt"):
     model = EasyNMT(model_name)
     translated = model.translate(text_list, source_lang=source_lang, target_lang=pivot_lang)
     back_translated = model.translate(translated, source_lang=pivot_lang, target_lang=source_lang)
     return back_translated
 
-#############################################
-# MAIN SCRIPT
-#############################################
+
 def main():
     parser = argparse.ArgumentParser(
         description="Apply text editing (character, POS, back translation) and compute metrics comparing edited text to original."
     )
-    # Dataset arguments
+
     parser.add_argument('--dataset_name', type=str, required=True, help="Name of the dataset to load (e.g., 'natural_questions').")
     parser.add_argument('--output_file', type=str, required=True, help="Path to the output CSV file.")
     parser.add_argument('--sample_size', type=int, default=1000, help="Number of samples to take from the dataset (default: 1000).")
     parser.add_argument('--full_sampling', action='store_true', help="Process the full dataset instead of sampling.")
 
-    # Flags for editing functions
     parser.add_argument('--apply_char', action='store_true', help="Apply character-level editing.")
     parser.add_argument('--apply_pos', action='store_true', help="Apply POS-based editing.")
     parser.add_argument('--apply_back', action='store_true', help="Apply back translation.")
 
-    # Tuning parameters
     parser.add_argument('--char_prob', type=float, default=0.2, help="Probability for character-level editing (default: 0.2).")
     parser.add_argument('--num_edits', type=int, default=1, help="Number of character edits per word (default: 1).")
     parser.add_argument('--pos_prob', type=float, default=0.2, help="Probability for POS-based editing (default: 0.2).")
@@ -169,7 +156,6 @@ def main():
 
     args = parser.parse_args()
 
-    # Load dataset
     df = load_dataset_samples(args.dataset_name, sample_size=args.sample_size, full_sampling=args.full_sampling)
     if "query" not in df.columns:
         raise ValueError("The dataset does not contain a 'query' column.")
@@ -190,9 +176,6 @@ def main():
         df['back_translated_query'] = back_translated
         edited_cols.append('back_translated_query')
 
-    #############################################
-    # COMPUTE METRICS USING IMPORTED FUNCTIONS
-    #############################################
     for col in edited_cols:
         df[f'gleu_{col}'] = df.apply(lambda row: compute_gleu(row['query'], row[col]), axis=1)
         df[f'levenshtein_{col}'] = df.apply(lambda row: compute_levenshtein_distance(row['query'], row[col]), axis=1)
