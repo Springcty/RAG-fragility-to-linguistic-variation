@@ -14,7 +14,11 @@
 Run rewriting experiments:
 
 ```bash
-@Neel
+For grammatical rewrites:
+sbatch query_rewriting/batch_grammatical_gen.sh
+
+For all other rewrites:
+sbatch query_rewriting/query_rewrite.sh
 ```
 
 Run retrieval experiment using `Contriever`:
