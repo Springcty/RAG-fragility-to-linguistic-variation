@@ -57,10 +57,10 @@ def load_dataset_samples(dataset_name: str, sample_size: int = 1000, full_sampli
         logging.info("Dataset loaded")
         train_dataset = dataset['test']
         df = train_dataset.to_pandas()
-        df.rename(columns={'question': 'query'}, inplace=True)  # Rename column for consistency
+        df.rename(columns={'question': 'query'}, inplace=True)  
 
     elif dataset_name == "EntityQuestions":
-        with open("/home/neelbhan/QueryLinguistic/dataset/merged_dev.json", "r", encoding="utf-8") as f:
+        with open("./data/filtered_eq.json", "r", encoding="utf-8") as f:
             data = json.load(f)
         questions = [item['question'] for item in data]
         answers = [item['answers'] for item in data]
