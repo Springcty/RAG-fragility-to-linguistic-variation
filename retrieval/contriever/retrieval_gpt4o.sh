@@ -50,18 +50,18 @@ echo "Starting retrieval for $DATASET ($FILE_TYPE, modification: $MODIFICATION) 
 
 # Choose the appropriate retrieval command based on dataset
 if [ "$DATASET" = "ms_marco" ]; then
-    python /home/neelbhan/QueryLinguistic/retrieval/contriever/passage_retrieval.py \
+    python ./retrieval/contriever/passage_retrieval.py \
         --model_name_or_path facebook/contriever \
-        --passages ./data/ms_marco_retrieval_data/msmarco_passage.jsonl \
+        --passages ./data/passages/msmarco_passage.jsonl \
         --passages_embeddings "./data/contriever_embeddings/*" \
         --data "$DATA" \
         --output_dir "$OUTPUT_DIR" \
         --n_docs 100
 else
-    python /home/neelbhan/QueryLinguistic/retrieval/contriever/passage_retrieval.py \
+    python ./retrieval/contriever/passage_retrieval.py \
         --model_name_or_path facebook/contriever \
         --passages ./data/psgs_w100.tsv \
-        --passages_embeddings "./data/embeddings/wikipedia_embeddings/*" \
+        --passages_embeddings "./data/wikipedia_embeddings/*" \
         --data "$DATA" \
         --output_dir "$OUTPUT_DIR" \
         --n_docs 100
