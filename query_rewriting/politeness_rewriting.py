@@ -183,8 +183,7 @@ df = df[df['politeness_score'] < 0.5]
 df = df.sort_values(by='politeness_score', ascending=True)
 
 # Sample 7500 questions
-# df_sampled = df.iloc[:7500].copy()
-df_sampled = df[:7000].copy()
+df_sampled = df.iloc[:7500].copy()
 
 # Load prompts
 prompts = {

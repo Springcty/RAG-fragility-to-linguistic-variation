@@ -14,19 +14,25 @@
 Run rewriting experiments:
 
 ```bash
-For grammatical rewrites:
+# Grammatical rewrites:
 sbatch query_rewriting/batch_grammatical_gen.sh
 
-For all other rewrites:
-sbatch query_rewriting/query_rewrite.sh
+# Formality rewrites
+sbatch query_rewriting/formality_rewrite.sh
+
+# Readability rewrites
+sbatch query_rewriting/readability_rewrite.sh
+
+# Politeness rewrites
+sbatch query_rewriting/politeness_rewrite.sh
 ```
 
 Run retrieval experiment using `Contriever`:
 ```bash
-#Encode the wikipedia or ms marco passages using Contriever. For wikipedia, follow instructions \href{https://github.com/Springcty/RAG-fragility-to-linguistic-variation/tree/main/retrieval/#contriever#evaluation}{here}. If you would like to generate ms marco embeddings:
+# Encode the wikipedia or ms marco passages using Contriever
 sbatch retrieval/contriever/sbatch_embeddings.sh
 
-In order to run the retrieval experiments:
+# Run the retrieval experiments
 sbatch retrieval/contriever/retrieval_gpt4o.sh
 ```
 
@@ -36,7 +42,7 @@ Run retrieval experiment using `ModernBERT`:
 # Encode retrieval corpus via distributed training on clusters by SLURM
 sbatch retrieval/ModernBERT/script/encode.sh
 
-# Run retrieval experiment
+# Run retrieval experiments
 bash retrieval/ModernBERT/script/retrieval.sh
 ```
 

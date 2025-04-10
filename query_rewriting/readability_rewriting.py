@@ -154,6 +154,7 @@ df['readability_score'] = df['question'].apply(lambda x: flesch_reading_ease(x))
 df = df[df['readability_score'] > 60]
 df = df.sort_values(by='readability_score', ascending=False)
 
+# sample 7000 questions
 df_sampled = df[:7000].copy()
 
 prompts = {

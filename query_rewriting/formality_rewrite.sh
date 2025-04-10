@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=rewrites_all
+#SBATCH --job-name=formality_rewrites
 #SBATCH --output=logs/%x_%j_%a.log
 #SBATCH --error=logs/testlogs/%x_%j_%a.err
 #SBATCH --nodes=1
@@ -19,7 +19,6 @@ combos=(
     "natural_questions politeness"
     "PopQA formality"
     "PopQA politeness"
-    "ms_marco formality"
 )
 
 combo=${combos[$SLURM_ARRAY_TASK_ID]}
