@@ -1,7 +1,9 @@
 
-# Out of Style: RAG's Fragility to Linguistic Variation
+# [Out of Style: RAG's Fragility to Linguistic Variation](https://arxiv.org/abs/xxx)
 
-[Abstract](https://arxiv.org/abs/xxx): Despite the impressive performance of Retrieval-augmented Generation (RAG) systems across various NLP benchmarks, their robustness in handling real-world user-LLM interaction queries remains largely underexplored. This presents a critical gap for practical deployment, where user queries exhibit greater linguistic diversity and can trigger cascading errors across interdependent RAG components. In this work, we systematically analyze how varying four linguistic dimensions (formality, readability, politeness, and grammatical correctness) impact RAG performance. We evaluate two retrieval models and nine LLMs, ranging from 3 to 72 billion parameters, across four information-seeking Question Answering (QA) datasets. Our results reveal that linguistic reformulations significantly impact both retrieval and generation stages, leading to a performance drop of up to 40.41\% in Recall@5 scores for less formal queries and 38.86\% in answer match scores for queries containing grammatical errors. Notably, RAG systems exhibit greater sensitivity to such variations compared to LLM-only generations, highlighting their vulnerability to error propagation due to linguistic shifts. These findings highlight the need for improved robustness techniques to enhance reliability in diverse user interactions.
+<img src="teaser.jpg" alt="QueryLinguistic/teaser.jpg" style="zoom: 33%;" />
+
+This study examines how RAG systems handle linguistic variations in user queries. Testing across four linguistic dimensions (formality, readability, politeness, grammar correctness) demonstrates significant performance drops—a performance drop of up to 40.41% in Recall@5 scores for less formal queries and 38.86% in answer match scores for queries containing grammatical errors. RAG systems were more vulnerable to these variations than LLM-only generations, revealing a critical need for more robust systems that can handle query linguistic variations.
 
 ## 📂 Project Structure
 
@@ -71,5 +73,4 @@ If you use this work, please cite our paper:
 ```
 
 ```
-
 
