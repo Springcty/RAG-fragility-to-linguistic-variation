@@ -1,5 +1,5 @@
 
-# [Out of Style: RAG's Fragility to Linguistic Variation](https://arxiv.org/abs/xxx)
+# [Out of Style: RAG's Fragility to Linguistic Variation](https://arxiv.org/abs/2504.08231)
 
 <img src="teaser.jpg" alt="QueryLinguistic/teaser.jpg" style="zoom: 33%;" />
 
