@@ -71,6 +71,14 @@ Distributed under the MIT License. See [`LICENSE`](./LICENSE) for more informati
 If you use this work, please cite our paper:
 
 ```
-
+@misc{cao2025styleragsfragilitylinguistic,
+      title={Out of Style: RAG's Fragility to Linguistic Variation}, 
+      author={Tianyu Cao and Neel Bhandari and Akhila Yerukola and Akari Asai and Maarten Sap},
+      year={2025},
+      eprint={2504.08231},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2504.08231}, 
+}
 ```
 
